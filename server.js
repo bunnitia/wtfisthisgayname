@@ -44,6 +44,35 @@ const upload = multer({
 app.use(express.static('public'));
 app.use('/uploads', express.static(uploadsDir));
 
+// Enhanced logging middleware to debug URL issues
+app.use((req, res, next) => {
+    const timestamp = new Date().toISOString();
+    console.log(`\n[${timestamp}] Incoming request:`);
+    console.log(`  Raw URL: ${req.url}`);
+    console.log(`  Method: ${req.method}`);
+    console.log(`  User-Agent: ${req.headers['user-agent']}`);
+    console.log(`  Referer: ${req.headers.referer || 'none'}`);
+    console.log(`  IP: ${req.ip || req.connection.remoteAddress}`);
+    
+    // Try to decode the URL and catch any issues
+    try {
+        const decoded = decodeURIComponent(req.url);
+        if (decoded !== req.url) {
+            console.log(`  Decoded URL: ${decoded}`);
+        }
+        // Check for weird characters
+        if (decoded.match(/[""]/)) {
+            console.log(`  ⚠️  SUSPICIOUS: URL contains smart quotes!`);
+        }
+        if (decoded.includes('">') || decoded.includes('">>')) {
+            console.log(`  ⚠️  SUSPICIOUS: URL contains HTML-like content!`);
+        }
+    } catch (error) {
+        console.log(`  ❌ URL decode error: ${error.message}`);
+    }
+    next();
+});
+
 // File upload endpoint (MUST be before catch-all route)
 app.post('/upload', upload.array('files', 10), (req, res) => {
     try {
