@@ -44,6 +44,32 @@ const upload = multer({
 app.use(express.static('public'));
 app.use('/uploads', express.static(uploadsDir));
 
+// Explicit route for the root path
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Handle any other routes by serving index.html (SPA fallback)
+app.get('*', (req, res) => {
+    // Decode the URL to check for malformed requests
+    try {
+        const decodedUrl = decodeURIComponent(req.url);
+        console.log('Decoded URL request:', decodedUrl);
+        
+        // If it's a malformed request or strange encoding, redirect to root
+        if (decodedUrl.includes('">') || decodedUrl.includes('">>') || decodedUrl.match(/[""]/)) {
+            console.log('Redirecting malformed URL to root:', decodedUrl);
+            return res.redirect('/');
+        }
+    } catch (error) {
+        console.log('URL decode error, redirecting to root:', req.url);
+        return res.redirect('/');
+    }
+    
+    // Otherwise serve the index.html for any unmatched routes
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 // Store connected clients and chat history
 const clients = new Map();
 const chatHistory = [];
