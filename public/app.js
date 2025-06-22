@@ -1542,13 +1542,22 @@ class ChatApp {
         
         const contentSpan = document.createElement('span');
         contentSpan.className = 'message-content';
-        // Process emojis, censor swear words, and process mentions
+        // Process emojis, markdown, censor swear words, and process mentions
         const processedContent = this.processEmojis(data.content);
-        const censoredContent = this.censorSwearWords(processedContent);
+        const markdownContent = this.processMarkdown(processedContent);
+        const censoredContent = this.censorSwearWords(markdownContent);
         const mentionedContent = this.processMentions(censoredContent);
-        // Use innerHTML to render emojis and mentions properly
+        // Use innerHTML to render emojis, markdown, and mentions properly
         contentSpan.innerHTML = mentionedContent;
         contentSpan.style.color = data.color;
+        
+        // Add click handlers for links
+        const links = contentSpan.querySelectorAll('.message-link');
+        links.forEach(link => {
+            link.addEventListener('click', (e) => {
+                this.handleLinkClick(e, link.dataset.url);
+            });
+        });
         
         contentDiv.appendChild(usernameSpan);
         // Add a colon and space after username
@@ -3834,6 +3843,57 @@ class ChatApp {
         });
     }
 
+    // Process markdown formatting and links
+    processMarkdown(text) {
+        if (!text || typeof text !== 'string') return text;
+        
+        let processed = text;
+        
+        // Process links first (before other markdown)
+        processed = this.processLinks(processed);
+        
+        // Bold text: **text** -> <strong>text</strong>
+        processed = processed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        
+        // Italic text: *text* -> <em>text</em>
+        processed = processed.replace(/\*(.*?)\*/g, '<em>$1</em>');
+        
+        // Code blocks: `code` -> <code>code</code>
+        processed = processed.replace(/`(.*?)`/g, '<code class="inline-code">$1</code>');
+        
+        // Headings
+        processed = processed.replace(/^### (.*$)/gm, '<h3 class="md-h3">$1</h3>');
+        processed = processed.replace(/^## (.*$)/gm, '<h2 class="md-h2">$1</h2>');
+        processed = processed.replace(/^# (.*$)/gm, '<h1 class="md-h1">$1</h1>');
+        
+        // Small text: -# text -> <small>text</small>
+        processed = processed.replace(/^-# (.*$)/gm, '<small class="md-small">$1</small>');
+        
+        return processed;
+    }
+
+    // Process links and make them clickable
+    processLinks(text) {
+        if (!text || typeof text !== 'string') return text;
+        
+        // URL regex that matches http/https links
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        
+        return text.replace(urlRegex, (url) => {
+            // Clean up the URL (remove trailing punctuation that's probably not part of the URL)
+            const cleanUrl = url.replace(/[.,;!?]+$/, '');
+            const trailingPunctuation = url.slice(cleanUrl.length);
+            
+            return `<a href="#" class="message-link" data-url="${this.escapeHtml(cleanUrl)}">${this.escapeHtml(cleanUrl)}</a>${trailingPunctuation}`;
+        });
+    }
+
+    // Handle link clicks with warning
+    handleLinkClick(event, url) {
+        event.preventDefault();
+        this.showWebsiteWarning('External Link', url);
+    }
+
     // Emoji picker methods
     openEmojiPicker() {
         this.emojiPickerModal.classList.remove('hidden');
@@ -4928,7 +4988,23 @@ class ChatApp {
         if (data.content && data.content.trim()) {
             const contentDiv = document.createElement('div');
             contentDiv.className = 'dm-message-content';
-            contentDiv.textContent = data.content;
+            
+            // Process content with markdown, emojis, and mentions
+            const processedContent = this.processEmojis(data.content);
+            const markdownContent = this.processMarkdown(processedContent);
+            const censoredContent = this.censorSwearWords(markdownContent);
+            const mentionedContent = this.processMentions(censoredContent);
+            
+            contentDiv.innerHTML = mentionedContent;
+            
+            // Add click handlers for links in DM
+            const links = contentDiv.querySelectorAll('.message-link');
+            links.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    this.handleLinkClick(e, link.dataset.url);
+                });
+            });
+            
             messageDiv.appendChild(contentDiv);
         }
         
