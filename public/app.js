@@ -720,7 +720,7 @@ class ChatApp {
         this.replyContainer = null;
         
         // File upload state
-        this.pendingFiles = [];
+        // this.pendingFiles = []; // removed - no longer needed
         this.isUploading = false;
     }
     
@@ -1293,8 +1293,8 @@ class ChatApp {
             return;
         }
         
-        // Don't send if uploading or if no content and no files
-        if (this.isUploading || (!content && this.pendingFiles.length === 0)) return;
+        // Don't send if uploading or if no content
+        if (this.isUploading || !content) return;
 
         // Process commands before sending
         if (content.startsWith('/')) {
@@ -1308,27 +1308,16 @@ class ChatApp {
             return;
         }
 
-        // Debug: Log what we have in pendingFiles
-        console.log('🔍 pendingFiles:', this.pendingFiles);
-        console.log('🔍 pendingFiles structure:', this.pendingFiles.map(f => ({
-            name: f.name || f.originalName,
-            hasUrl: !!f.url,
-            type: f.type || f.mimetype,
-            keys: Object.keys(f)
-        })));
-
-        // Use already uploaded files (they were uploaded when selected)
-        const attachments = this.pendingFiles.filter(file => file.url); // Only include uploaded files
+        // Check if message contains attachment IDs
+        const hasAttachmentIDs = /\$[a-zA-Z0-9]+\$/g.test(content);
         
-        console.log('🔍 Filtered attachments:', attachments);
-        
-        // Don't send if only files and no uploaded files available
-        if (!content && attachments.length === 0) return;
+        console.log('🔍 Message content:', content);
+        console.log('🔍 Has attachment IDs:', hasAttachmentIDs);
 
         const messageData = {
             type: 'message',
             content: content || '',
-            attachments: attachments
+            attachments: [] // No attachments when using IDs
         };
 
         // Add reply data if replying to a message
@@ -1349,9 +1338,8 @@ class ChatApp {
         // Record message timestamp for spam detection
         this.recordMessageTimestamp();
         
-        // Clear reply, input, and attachments
+        // Clear reply and input
         this.clearReply();
-        this.clearAttachments();
         this.chatInput.value = '';
     }
     
@@ -2736,29 +2724,82 @@ class ChatApp {
         if (files.length === 0) return;
         
         const filesArray = Array.from(files);
-        this.pendingFiles.push(...filesArray);
-        this.updateAttachmentPreview();
         
-        // Immediately start uploading files in the background
-        this.uploadSelectedFiles();
+        // immediately upload each file and generate IDs
+        filesArray.forEach(file => {
+            this.uploadAndGenerateID(file);
+        });
     }
 
-    async uploadSelectedFiles() {
-        if (this.pendingFiles.length === 0 || this.isUploading) return;
+    async uploadAndGenerateID(file) {
+        // show simple progress bar
+        this.showUploadProgress();
+        this.updateUploadProgress(0, 'Uploading...');
         
         try {
-            const uploadedFiles = await this.uploadFiles();
+            const formData = new FormData();
+            formData.append('files', file);
             
-            // Replace pending files with uploaded file data
-            this.pendingFiles = uploadedFiles;
-            this.updateAttachmentPreview();
+            const xhr = new XMLHttpRequest();
+            
+            const uploadedFile = await new Promise((resolve, reject) => {
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const progress = e.loaded / e.total;
+                        this.updateUploadProgress(progress, 'Uploading...');
+                    }
+                });
+                
+                xhr.addEventListener('load', () => {
+                    if (xhr.status === 200) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            resolve(response.files[0]); // get first file from response
+                        } catch (error) {
+                            reject(new Error('Invalid server response'));
+                        }
+                    } else {
+                        reject(new Error(`Upload failed: ${xhr.status}`));
+                    }
+                });
+                
+                xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+                xhr.addEventListener('timeout', () => reject(new Error('Upload timeout')));
+                
+                xhr.timeout = 30000;
+                xhr.open('POST', '/upload');
+                xhr.send(formData);
+            });
+            
+            // generate unique ID and store file
+            const fileID = Math.random().toString(36).substr(2, 8);
+            
+            // initialize global registry if it doesn't exist
+            if (!window.attachmentRegistry) {
+                window.attachmentRegistry = new Map();
+            }
+            
+            // store the uploaded file data with the ID
+            window.attachmentRegistry.set(fileID, uploadedFile);
+            
+            // hide progress bar
+            this.hideUploadProgress();
+            
+            // add ID to chat input
+            const chatInput = document.getElementById('chatInput');
+            const currentText = chatInput.value;
+            const newText = currentText + (currentText ? ' ' : '') + `$${fileID}$`;
+            chatInput.value = newText;
+            
+            // focus the input and move cursor to end
+            chatInput.focus();
+            chatInput.setSelectionRange(newText.length, newText.length);
             
         } catch (error) {
-            console.error('Failed to upload files:', error);
-            // Show user-friendly error message
-            this.updateUploadProgress(0, 'Upload failed. Please try again.');
+            console.error('Upload failed:', error);
+            this.updateUploadProgress(0, 'Upload failed');
             setTimeout(() => {
-                this.uploadProgress.classList.add('hidden');
+                this.hideUploadProgress();
             }, 2000);
         }
     }
@@ -2785,64 +2826,23 @@ class ChatApp {
     }
 
     updateAttachmentPreview() {
-        if (this.pendingFiles.length === 0) {
-            this.attachmentPreview.classList.add('hidden');
-            return;
-        }
-        
-        const previewHtml = this.pendingFiles.map((file, index) => {
-            const fileName = file.originalName || file.name;
-            const fileSize = file.size || 0;
-            const fileType = file.type || file.mimetype || '';
-            
-            return `
-                <div class="attachment-item">
-                    <span class="attachment-icon">${this.getFileIconByType(fileType)}</span>
-                    <div class="attachment-info">
-                        <span class="attachment-name">${fileName}</span>
-                        <span class="attachment-size">${this.formatFileSize(fileSize)}</span>
-                    </div>
-                    <button class="remove-attachment" onclick="chatApp.removeAttachment(${index})">×</button>
-                </div>
-            `;
-        }).join('');
-        
-        this.attachmentPreview.innerHTML = previewHtml;
-        this.attachmentPreview.classList.remove('hidden');
+        // no longer needed - files are uploaded immediately
+        return;
     }
 
     createAttachmentList() {
-        this.attachmentPreview.innerHTML = `
-            <div class="attachment-header">
-                <span class="attachment-title">${this.pendingFiles.length} file(s) attached</span>
-                <button class="generate-ids-btn">Generate IDs</button>
-                <button class="clear-attachments">Clear All</button>
-            </div>
-            <div class="attachment-list"></div>
-        `;
-
-        const clearButton = this.attachmentPreview.querySelector('.clear-attachments');
-        clearButton.addEventListener('click', () => {
-            this.clearAttachments();
-        });
-
-        const generateIDsButton = this.attachmentPreview.querySelector('.generate-ids-btn');
-        generateIDsButton.addEventListener('click', () => {
-            this.addAttachmentIDsToInput();
-        });
-
-        return this.attachmentPreview.querySelector('.attachment-list');
+        // no longer needed - files are uploaded immediately
+        return;
     }
 
     clearAttachments() {
-        this.pendingFiles = [];
-        this.updateAttachmentPreview();
-        this.fileInput.value = '';
+        // no longer needed - files are uploaded immediately
+        return;
     }
 
     removeAttachment(index) {
-        this.pendingFiles.splice(index, 1);
-        this.updateAttachmentPreview();
+        // no longer needed - files are uploaded immediately
+        return;
     }
 
     getFileIconByType(type) {
@@ -2905,81 +2905,8 @@ class ChatApp {
     }
 
     async uploadFiles() {
-        if (this.pendingFiles.length === 0) return [];
-        
-        this.isUploading = true;
-        this.uploadProgress.classList.remove('hidden');
-        this.updateUploadProgress(0, 'Preparing upload...');
-        
-        try {
-            const formData = new FormData();
-            
-            this.pendingFiles.forEach(file => {
-                formData.append('files', file);
-            });
-            
-            const xhr = new XMLHttpRequest();
-            
-            return new Promise((resolve, reject) => {
-                xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        const progress = e.loaded / e.total;
-                        this.updateUploadProgress(progress, `Uploading... ${Math.round(progress * 100)}%`);
-                    }
-                });
-                
-                xhr.addEventListener('load', () => {
-                    if (xhr.status === 200) {
-                        try {
-                            const response = JSON.parse(xhr.responseText);
-                            this.updateUploadProgress(1, 'Upload complete!');
-                            
-                            // Hide progress after a short delay
-                            setTimeout(() => {
-                                this.isUploading = false;
-                                this.uploadProgress.classList.add('hidden');
-                            }, 500);
-                            
-                            resolve(response.files);
-                        } catch (error) {
-                            console.error('Failed to parse upload response:', error);
-                            this.isUploading = false;
-                            this.uploadProgress.classList.add('hidden');
-                            reject(new Error('Invalid server response'));
-                        }
-                    } else {
-                        console.error('Upload failed with status:', xhr.status);
-                        this.isUploading = false;
-                        this.uploadProgress.classList.add('hidden');
-                        reject(new Error(`Upload failed: ${xhr.status}`));
-                    }
-                });
-                
-                xhr.addEventListener('error', (e) => {
-                    console.error('Upload error:', e);
-                    this.isUploading = false;
-                    this.uploadProgress.classList.add('hidden');
-                    reject(new Error('Upload failed'));
-                });
-                
-                xhr.addEventListener('timeout', () => {
-                    console.error('Upload timeout');
-                    this.isUploading = false;
-                    this.uploadProgress.classList.add('hidden');
-                    reject(new Error('Upload timeout'));
-                });
-                
-                xhr.timeout = 30000; // 30 second timeout
-                xhr.open('POST', '/upload');
-                xhr.send(formData);
-            });
-            
-        } catch (error) {
-            console.error('Upload error:', error);
-            this.isUploading = false;
-            this.uploadProgress.classList.add('hidden');
-            throw error;
-        }
+        // no longer needed - files are uploaded individually
+        return [];
     }
 
     showUploadProgress() {
