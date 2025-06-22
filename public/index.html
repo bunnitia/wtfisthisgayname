@@ -27,7 +27,7 @@
     <div id="chatScreen" class="chat-screen hidden">
         <!-- Click Me Button -->
         <div class="click-me-container">
-            <button id="clickMeButton" class="click-me-button">Click Me!</button>
+            <button id="clickMeButton" class="click-me-button">useful info frfr</button>
         </div>
         
         <!-- User List -->
@@ -205,32 +205,128 @@
         <div class="click-me-backdrop"></div>
         <div class="click-me-container-modal">
             <div class="click-me-header">
-                <h2>ok so like... about this website 💀</h2>
+                <h2>useful info frfr 💀</h2>
                 <button class="close-button" id="closeClickMe">×</button>
             </div>
+            
+            <!-- Tabs -->
+            <div class="click-me-tabs">
+                <button class="click-me-tab active" data-tab="about">ABOUT</button>
+                <button class="click-me-tab" data-tab="changelog">CHANGELOG</button>
+            </div>
+            
             <div class="click-me-content">
-                <div class="click-me-section">
-                    <h3>sleep mode activated 😴</h3>
-                    <p>this thing goes to sleep after 15 mins cuz im too lazy to pay for a server plan lol. if people actually use this and it gets a lot of activity ill probably get a proper plan and maybe even a domain that doesnt look like garbage</p>
+                <!-- About Tab Content -->
+                <div id="about-tab" class="click-me-tab-content active">
+                    <div class="click-me-section">
+                        <h3>sleep mode activated 😴</h3>
+                        <p>this thing goes to sleep after 15 mins cuz im too lazy to pay for a server plan lol. if people actually use this and it gets a lot of activity ill probably get a proper plan and maybe even a domain that doesnt look like garbage</p>
+                    </div>
+                    
+                    <div class="click-me-section">
+                        <h3>ugly domain alert 🚨</h3>
+                        <p>domain literally looks ugly cuz its free (no shit sherlock) and im using render to host it (again, no shit) cuz im too lazy to setup cloudflare and all that fancy stuff</p>
+                    </div>
+                    
+                    <div class="click-me-section">
+                        <h3>code is naked 👀</h3>
+                        <p>im too lazy to obfuscate the code so u can literally see the frontend and probably connect bots especially since this is raw websocket. like the source code is just sitting there saying "hey come exploit me"</p>
+                    </div>
+                    
+                    <div class="click-me-section">
+                        <h3>security? what security 🔓</h3>
+                        <p>u can literally duplicate ur tab and itll think ur another user with the same name. thats how shit the security on this website is. like i didnt even try to prevent that lmao</p>
+                    </div>
+                    
+                    <div class="click-me-footer">
+                        <p>anyway enjoy the chat i guess 🤷‍♂️</p>
+                    </div>
                 </div>
                 
-                <div class="click-me-section">
-                    <h3>ugly domain alert 🚨</h3>
-                    <p>domain literally looks ugly cuz its free (no shit sherlock) and im using render to host it (again, no shit) cuz im too lazy to setup cloudflare and all that fancy stuff</p>
-                </div>
-                
-                <div class="click-me-section">
-                    <h3>code is naked 👀</h3>
-                    <p>im too lazy to obfuscate the code so u can literally see the frontend and probably connect bots especially since this is raw websocket. like the source code is just sitting there saying "hey come exploit me"</p>
-                </div>
-                
-                <div class="click-me-section">
-                    <h3>security? what security 🔓</h3>
-                    <p>u can literally duplicate ur tab and itll think ur another user with the same name. thats how shit the security on this website is. like i didnt even try to prevent that lmao</p>
-                </div>
-                
-                <div class="click-me-footer">
-                    <p>anyway enjoy the chat i guess 🤷‍♂️</p>
+                <!-- Changelog Tab Content -->
+                <div id="changelog-tab" class="click-me-tab-content">
+                    <div class="changelog-categories">
+                        <button class="changelog-category-btn active" data-category="june22">June 22</button>
+                        <button class="changelog-category-btn" data-category="soon">Coming Soon</button>
+                    </div>
+                    
+                    <!-- June 22 Changelog -->
+                    <div id="june22-changelog" class="changelog-section active">
+                        <h3>🎉 **june 22 - the day everything went live**</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **new features**</h4>
+                            <ul>
+                                <li>🚀 **released the server** - its alive motherfuckers</li>
+                                <li>📝 **markdown formatting support** for your chaotic messages:
+                                    <ul>
+                                        <li>`**bold text**` for when u need to **yell**</li>
+                                        <li>`*italic text*` for that *dramatic emphasis*</li>
+                                        <li>`\`inline code\`` for when u wanna look like a programmer</li>
+                                        <li>`-# tiny gray text` for whispers and side comments</li>
+                                        <li>`#`, `##`, `###` headings cuz structure matters sometimes</li>
+                                        <li>`||spoiler text||` for regular spoilers</li>
+                                        <li>`||||warning spoiler||||` for content that needs extra warning</li>
+                                        <li>`https://links.com/` get converted to clickable links (with warnings to prevent rickrolls)</li>
+                                    </ul>
+                                </li>
+                                <li>🔄 **replaced "Click Me!" with this beautiful modal** ur looking at rn</li>
+                                <li>📁 **added tabs and categories** cuz organization is kinda cool</li>
+                                <li>⌨️ **auto-focus chat input** - just start typing anywhere and it focuses automatically (no more clicking like a peasant)</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🔧 **bug fixes**</h4>
+                            <ul>
+                                <li>💬 **fixed first DM message** - no more messages getting cut off at the top</li>
+                                <li>🌐 **fixed spacing with website links** - there might be an extra space but who's counting</li>
+                                <li>📎 **fixed media/files in DMs** - attachments actually show up now like they should</li>
+                                <li>🎯 **fixed spoiler reveal** - warning spoilers actually show the original content instead of staying as "Click to reveal spoiler (Warning)" forever</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <!-- Coming Soon Changelog -->
+                    <div id="soon-changelog" class="changelog-section">
+                        <h3>🔮 **coming soon™** *(no eta cuz im lazy)*</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **visual improvements**</h4>
+                            <ul>
+                                <li>💎 **glossy gloss** - make everything shinier</li>
+                                <li>💌 **better DMs** - current system is kinda ass ngl</li>
+                                <li>🎯 **fix external link warning** - its not even centered and it bothers me</li>
+                                <li>🙈 **fix media spoiler** - should only hide content, not the entire message</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🎮 **mini games**</h4>
+                            <ul>
+                                <li>⚡ **type race** - see who can type fastest without dying</li>
+                                <li>🔢 **math race** - quick maths but make it competitive</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🛡️ **moderation & admin tools**</h4>
+                            <ul>
+                                <li>🚫 **block people** - for when someone's being extra annoying</li>
+                                <li>🔇 **fix mute system** - currently u can just relog to bypass it lmao</li>
+                                <li>⚡ **stricter anti-spam** - current system is too lenient</li>
+                                <li>🌐 **ip-based moderation** - mute/ban by IP for real troublemakers</li>
+                                <li>🗑️ **mod message deletion** - let mods clean up the chaos</li>
+                                <li>😈 **un-degenerate sigma** - whatever tf that means</li>
+                                <li>🙈 **manual media spoiler** - for when auto-spoiler is off</li>
+                                <li>🤖 **||||sexbot||||???** - dont ask me what this means either</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-footer">
+                            <p>*timeline: whenever i feel like it 🤷‍♂️*</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

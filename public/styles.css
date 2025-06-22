@@ -4167,3 +4167,167 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
         width: 100%;
     }
 }
+
+/* Click Me Modal Tabs */
+.click-me-tabs {
+    display: flex;
+    border-bottom: 2px solid #333333;
+    margin-bottom: 20px;
+}
+
+.click-me-tab {
+    flex: 1;
+    padding: 12px 20px;
+    background: transparent;
+    border: none;
+    color: #888888;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-bottom: 3px solid transparent;
+}
+
+.click-me-tab:hover {
+    color: #cccccc;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.click-me-tab.active {
+    color: #ffffff;
+    border-bottom-color: #4da6ff;
+    background: rgba(77, 166, 255, 0.1);
+}
+
+.click-me-tab-content {
+    display: none;
+}
+
+.click-me-tab-content.active {
+    display: block;
+}
+
+/* Changelog Categories */
+.changelog-categories {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.changelog-category-btn {
+    padding: 8px 16px;
+    background: #333333;
+    border: 2px solid #555555;
+    border-radius: 8px;
+    color: #cccccc;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.changelog-category-btn:hover {
+    background: #444444;
+    border-color: #666666;
+}
+
+.changelog-category-btn.active {
+    background: #4da6ff;
+    border-color: #4da6ff;
+    color: #ffffff;
+}
+
+.changelog-section {
+    display: none;
+}
+
+.changelog-section.active {
+    display: block;
+}
+
+.changelog-section h3 {
+    color: #4da6ff;
+    margin-bottom: 20px;
+    font-size: 1.3em;
+}
+
+.changelog-group {
+    margin-bottom: 25px;
+}
+
+.changelog-group h4 {
+    color: #66b3ff;
+    margin-bottom: 12px;
+    font-size: 1.1em;
+}
+
+.changelog-group ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.changelog-group li {
+    margin-bottom: 8px;
+    padding-left: 20px;
+    position: relative;
+    color: #cccccc;
+    line-height: 1.4;
+}
+
+.changelog-group ul ul {
+    margin-top: 8px;
+    padding-left: 20px;
+}
+
+.changelog-group ul ul li {
+    font-size: 0.9em;
+    color: #aaaaaa;
+}
+
+.changelog-footer {
+    margin-top: 30px;
+    text-align: center;
+}
+
+.changelog-footer p {
+    color: #888888;
+    font-style: italic;
+}
+
+/* Process markdown in changelog */
+.changelog-section strong,
+.changelog-group strong {
+    color: #ffffff;
+}
+
+.changelog-section em,
+.changelog-group em {
+    color: #dddddd;
+}
+
+.changelog-section code,
+.changelog-group code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+}
+
+@media (max-width: 768px) {
+    .click-me-tabs {
+        flex-direction: column;
+    }
+    
+    .click-me-tab {
+        border-bottom: none;
+        border-left: 3px solid transparent;
+    }
+    
+    .click-me-tab.active {
+        border-bottom: none;
+        border-left-color: #4da6ff;
+    }
+    
+    .changelog-categories {
+        flex-direction: column;
+    }
+}

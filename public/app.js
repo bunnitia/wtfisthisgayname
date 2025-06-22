@@ -5158,10 +5158,77 @@ class ChatApp {
 
     openClickMeModal() {
         this.clickMeModal.classList.remove('hidden');
+        
+        // Add event listeners for tabs and changelog categories
+        this.setupClickMeModalListeners();
     }
 
     closeClickMeModal() {
         this.clickMeModal.classList.add('hidden');
+        
+        // Clean up event listeners
+        this.cleanupClickMeModalListeners();
+    }
+    
+    setupClickMeModalListeners() {
+        // Tab switching
+        const tabs = document.querySelectorAll('.click-me-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                const targetTab = e.target.dataset.tab;
+                this.switchClickMeTab(targetTab);
+            });
+        });
+        
+        // Changelog category switching
+        const categoryBtns = document.querySelectorAll('.changelog-category-btn');
+        categoryBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const targetCategory = e.target.dataset.category;
+                this.switchChangelogCategory(targetCategory);
+            });
+        });
+    }
+    
+    cleanupClickMeModalListeners() {
+        // Remove event listeners to prevent memory leaks
+        const tabs = document.querySelectorAll('.click-me-tab');
+        tabs.forEach(tab => {
+            tab.replaceWith(tab.cloneNode(true));
+        });
+        
+        const categoryBtns = document.querySelectorAll('.changelog-category-btn');
+        categoryBtns.forEach(btn => {
+            btn.replaceWith(btn.cloneNode(true));
+        });
+    }
+    
+    switchClickMeTab(targetTab) {
+        // Update tab buttons
+        document.querySelectorAll('.click-me-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.querySelector(`[data-tab="${targetTab}"]`).classList.add('active');
+        
+        // Update tab content
+        document.querySelectorAll('.click-me-tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        document.getElementById(`${targetTab}-tab`).classList.add('active');
+    }
+    
+    switchChangelogCategory(targetCategory) {
+        // Update category buttons
+        document.querySelectorAll('.changelog-category-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        document.querySelector(`[data-category="${targetCategory}"]`).classList.add('active');
+        
+        // Update category content
+        document.querySelectorAll('.changelog-section').forEach(section => {
+            section.classList.remove('active');
+        });
+        document.getElementById(`${targetCategory}-changelog`).classList.add('active');
     }
 
     // Auto-focus helper methods
