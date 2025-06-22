@@ -1308,16 +1308,32 @@ class ChatApp {
             return;
         }
 
-        // Check if message contains attachment IDs
-        const hasAttachmentIDs = /\$[a-zA-Z0-9]+\$/g.test(content);
+        // Check if message contains attachment IDs and resolve them
+        const attachmentIdMatches = content.match(/\$([a-zA-Z0-9]+)\$/g);
+        const attachments = [];
+        let cleanContent = content;
         
-        console.log('🔍 Message content:', content);
-        console.log('🔍 Has attachment IDs:', hasAttachmentIDs);
+        if (attachmentIdMatches) {
+            const registry = window.attachmentRegistry || new Map();
+            attachmentIdMatches.forEach(match => {
+                const id = match.slice(1, -1); // remove $ symbols
+                const attachment = registry.get(id);
+                if (attachment) {
+                    attachments.push(attachment);
+                    // remove the ID from content since we're sending the actual attachment
+                    cleanContent = cleanContent.replace(match, '').trim();
+                }
+            });
+        }
+        
+        console.log('🔍 Original content:', content);
+        console.log('🔍 Clean content:', cleanContent);
+        console.log('🔍 Found attachments:', attachments);
 
         const messageData = {
             type: 'message',
-            content: content || '',
-            attachments: [] // No attachments when using IDs
+            content: cleanContent || '',
+            attachments: attachments // Include resolved attachments
         };
 
         // Add reply data if replying to a message
@@ -2755,7 +2771,7 @@ class ChatApp {
                         try {
                             const response = JSON.parse(xhr.responseText);
                             resolve(response.files[0]); // get first file from response
-                        } catch (error) {
+        } catch (error) {
                             reject(new Error('Invalid server response'));
                         }
                     } else {
@@ -2827,7 +2843,7 @@ class ChatApp {
 
     updateAttachmentPreview() {
         // no longer needed - files are uploaded immediately
-        return;
+            return;
     }
 
     createAttachmentList() {
@@ -3824,9 +3840,6 @@ class ChatApp {
         if (!text || typeof text !== 'string') return text;
         
         let processed = text;
-        
-        // Process attachment IDs first
-        processed = this.processAttachmentIDs(processed);
         
         // Process links first (before other markdown)
         processed = this.processLinks(processed);
