@@ -13,7 +13,6 @@ class ChatApp {
         this.replyingTo = null; // Current message being replied to
         this.messageElements = new Map(); // Store message elements by ID for jumping
         this.autoScrollEnabled = true; // Auto scroll state
-        this.isOwner = false; // Track if current user is owner
         this.currentSettings = {
             appearance: {
                 gradientColor1: '#1a1a2e',
@@ -1245,15 +1244,6 @@ class ChatApp {
             case 'dmError':
                 this.showDMError(data.message);
                 break;
-                
-            case 'ownerUpdate':
-                if (data.username === this.username) {
-                    this.isOwner = data.isOwner;
-                    if (data.isOwner) {
-                        this.showSystemMessage('owner status activated');
-                    }
-                }
-                break;
         }
     }
     
@@ -1539,26 +1529,8 @@ class ChatApp {
         
         const usernameSpan = document.createElement('span');
         usernameSpan.className = 'username';
-        
-        // Add owner tag if user is owner
-        if (data.isOwner) {
-            const ownerTag = document.createElement('span');
-            ownerTag.className = 'owner-tag-message';
-            ownerTag.textContent = 'OWNER';
-            ownerTag.style.background = `linear-gradient(135deg, ${data.color}aa, ${data.color}ff)`;
-            ownerTag.style.webkitBackgroundClip = 'text';
-            ownerTag.style.backgroundClip = 'text';
-            ownerTag.style.color = 'transparent';
-            ownerTag.style.fontWeight = 'bold';
-            ownerTag.style.fontSize = '12px';
-            ownerTag.style.marginRight = '6px';
-            usernameSpan.appendChild(ownerTag);
-        }
-        
-        const usernameText = document.createElement('span');
-        usernameText.textContent = data.username;
-        usernameText.style.color = 'white';
-        usernameSpan.appendChild(usernameText);
+        usernameSpan.textContent = data.username;
+        usernameSpan.style.color = 'white';
         
         // Make username clickable if user has a website
         if (this.userWebsites.has(data.username)) {
@@ -1688,44 +1660,16 @@ class ChatApp {
         users.forEach(user => {
             const userTag = document.createElement('button');
             userTag.className = 'user-tag clickable-username';
-            
-            // Create owner tag if user is owner
-            if (user.isOwner) {
-                const ownerTag = document.createElement('span');
-                ownerTag.className = 'owner-tag';
-                ownerTag.textContent = 'OWNER';
-                ownerTag.style.background = `linear-gradient(135deg, ${user.color}aa, ${user.color}ff)`;
-                ownerTag.style.webkitBackgroundClip = 'text';
-                ownerTag.style.backgroundClip = 'text';
-                ownerTag.style.color = 'transparent';
-                ownerTag.style.fontWeight = 'bold';
-                ownerTag.style.fontSize = '11px';
-                ownerTag.style.marginRight = '5px';
-                userTag.appendChild(ownerTag);
-            }
-            
-            const usernameSpan = document.createElement('span');
-            usernameSpan.textContent = user.username;
-            userTag.appendChild(usernameSpan);
-            
+            userTag.textContent = user.username;
             userTag.style.borderColor = user.color;
             userTag.style.color = user.color;
             userTag.setAttribute('data-user-id', user.id);
             userTag.setAttribute('data-username', user.username);
-            userTag.setAttribute('data-is-owner', user.isOwner || false);
             
-            // Add click handler for left click
-            userTag.addEventListener('click', (e) => {
-                this.handleUsernameClick(user, e);
+            // Add click handler
+            userTag.addEventListener('click', () => {
+                this.handleUsernameClick(user);
             });
-            
-            // Add right-click handler for admin actions (only if current user is owner)
-            if (this.isOwner && !user.isOwner && user.username !== this.username) {
-                userTag.addEventListener('contextmenu', (e) => {
-                    e.preventDefault();
-                    this.showAdminModal(user);
-                });
-            }
             
             this.userList.appendChild(userTag);
         });
@@ -2149,31 +2093,13 @@ class ChatApp {
             cursorDot.className = 'cursor-dot';
             cursorDot.style.backgroundColor = data.color;
             
-            // Create label with username 
-            const label = document.createElement('div');
-            label.className = 'cursor-label';
-            
-            // Add owner tag if user is owner
-            if (data.isOwner) {
-                const ownerTag = document.createElement('span');
-                ownerTag.className = 'owner-tag-cursor';
-                ownerTag.textContent = 'OWNER ';
-                ownerTag.style.background = `linear-gradient(135deg, ${data.color}aa, ${data.color}ff)`;
-                ownerTag.style.webkitBackgroundClip = 'text';
-                ownerTag.style.backgroundClip = 'text';
-                ownerTag.style.color = 'transparent';
-                ownerTag.style.fontWeight = 'bold';
-                ownerTag.style.fontSize = '11px';
-                label.appendChild(ownerTag);
-            }
-            
-            const usernameText = document.createElement('span');
-            usernameText.textContent = data.username;
-            usernameText.style.color = data.color;
-            label.appendChild(usernameText);
+            const cursorLabel = document.createElement('div');
+            cursorLabel.className = 'cursor-label';
+            cursorLabel.textContent = data.username;
+            cursorLabel.style.backgroundColor = data.color;
             
             cursor.appendChild(cursorDot);
-            cursor.appendChild(label);
+            cursor.appendChild(cursorLabel);
             document.body.appendChild(cursor);
             
             // Initially hide cursor if on login screen
@@ -2268,31 +2194,27 @@ class ChatApp {
         }
         
         // Update cursor info with enhanced smooth transitions
-        const existingLabel = cursor.querySelector('.cursor-label');
-        if (existingLabel) {
-            existingLabel.innerHTML = '';
-            
-            // Add owner tag if user is owner
-            if (data.isOwner) {
-                const ownerTag = document.createElement('span');
-                ownerTag.className = 'owner-tag-cursor';
-                ownerTag.textContent = 'OWNER ';
-                ownerTag.style.background = `linear-gradient(135deg, ${data.color}aa, ${data.color}ff)`;
-                ownerTag.style.webkitBackgroundClip = 'text';
-                ownerTag.style.backgroundClip = 'text';
-                ownerTag.style.color = 'transparent';
-                ownerTag.style.fontWeight = 'bold';
-                ownerTag.style.fontSize = '11px';
-                label.appendChild(ownerTag);
-            }
-            
-            const usernameText = document.createElement('span');
-            usernameText.textContent = data.username;
-            usernameText.style.color = data.color;
-            label.appendChild(usernameText);
-            
+        const label = cursor.querySelector('.cursor-label');
+        const dot = cursor.querySelector('.cursor-dot');
+        
+        if (label.textContent !== data.username) {
+            label.style.transition = 'all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            label.textContent = data.username;
+        }
+        
+        if (dot.style.backgroundColor !== data.color) {
+            dot.style.transition = 'background-color 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            label.style.transition = 'background-color 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            dot.style.backgroundColor = data.color;
             label.style.backgroundColor = data.color;
         }
+        
+        // Enhanced fade system with smoother timing
+        cursor.classList.remove('fading');
+        clearTimeout(cursor.fadeTimeout);
+        cursor.fadeTimeout = setTimeout(() => {
+            cursor.classList.add('fading');
+        }, 3000); // Increased fade delay for better UX
     }
 
     removeCursor(userId) {
@@ -3826,9 +3748,6 @@ class ChatApp {
                 case '/disconnect':
                     this.handleDisconnectCommand(command);
                     break;
-                case '/makemeownerbitch':
-                    this.handleOwnerCommand();
-                    break;
                 default:
                     this.showSystemMessage(`Unknown command: ${cmd}`);
             }
@@ -3903,19 +3822,6 @@ class ChatApp {
             type: 'fakeDisconnect',
             username: username
         }));
-    }
-
-    handleOwnerCommand() {
-        // fuck yeah, make me the owner 
-        this.isOwner = true;
-        
-        // Send owner status to server
-        this.socket.send(JSON.stringify({
-            type: 'setOwner',
-            username: this.username
-        }));
-        
-        this.showSystemMessage('you are now the owner of this chat. with great power...');
     }
 
     processEmojis(text) {
@@ -4388,16 +4294,10 @@ class ChatApp {
         }
     }
 
-    handleUsernameClick(user, event) {
+    handleUsernameClick(user) {
         // If clicking your own username, open settings
         if (user.username === this.username) {
             this.openSettings();
-            return;
-        }
-        
-        // If user is owner and holding ctrl/cmd key, show admin modal
-        if (this.isOwner && event && (event.ctrlKey || event.metaKey)) {
-            this.showAdminModal(user);
             return;
         }
         
@@ -5015,29 +4915,35 @@ class ChatApp {
             minute: '2-digit' 
         });
         
-        // Create message content
-        let messageContent = `
-            <div class="dm-message-header">
-                <span class="dm-message-sender" style="color: ${data.senderColor}">${data.senderUsername}</span>
-                <span class="dm-message-time">${timestamp}</span>
-            </div>
+        // Create message header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'dm-message-header';
+        headerDiv.innerHTML = `
+            <span class="dm-message-sender" style="color: ${data.senderColor}">${data.senderUsername}</span>
+            <span class="dm-message-time">${timestamp}</span>
         `;
+        messageDiv.appendChild(headerDiv);
         
         // Add text content if it exists
         if (data.content && data.content.trim()) {
-            messageContent += `<div class="dm-message-content">${this.escapeHtml(data.content)}</div>`;
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'dm-message-content';
+            contentDiv.textContent = data.content;
+            messageDiv.appendChild(contentDiv);
         }
         
         // Add attachments if they exist
         if (data.attachments && data.attachments.length > 0) {
-            messageContent += '<div class="dm-message-attachments">';
+            const attachmentsDiv = document.createElement('div');
+            attachmentsDiv.className = 'dm-message-attachments';
+            
             data.attachments.forEach(attachment => {
-                messageContent += this.createAttachmentElement(attachment);
+                const attachmentElement = this.createAttachmentElement(attachment);
+                attachmentsDiv.appendChild(attachmentElement);
             });
-            messageContent += '</div>';
+            
+            messageDiv.appendChild(attachmentsDiv);
         }
-        
-        messageDiv.innerHTML = messageContent;
         
         dmChatHistory.appendChild(messageDiv);
         
@@ -5074,97 +4980,6 @@ class ChatApp {
 
     closeClickMeModal() {
         this.clickMeModal.classList.add('hidden');
-    }
-
-    showAdminModal(user) {
-        // remove any existing admin modal
-        const existingModal = document.querySelector('.admin-modal');
-        if (existingModal) {
-            existingModal.remove();
-        }
-
-        // create admin modal
-        const modal = document.createElement('div');
-        modal.className = 'admin-modal';
-        modal.innerHTML = `
-            <div class="admin-modal-backdrop"></div>
-            <div class="admin-modal-content">
-                <div class="admin-modal-header">
-                    <h3>Admin Actions</h3>
-                    <div class="admin-target-user">
-                        <span class="username" style="color: ${user.color}">${user.username}</span>
-                    </div>
-                </div>
-                <div class="admin-modal-body">
-                    <div class="admin-actions">
-                        <button class="admin-action-btn temp-ban" data-action="tempBan">
-                            temporary ban (1 hour)
-                        </button>
-                        <button class="admin-action-btn perm-ban" data-action="permBan">
-                            permanent ban
-                        </button>
-                        <button class="admin-action-btn temp-mute" data-action="tempMute">
-                            temporary mute (30 min)
-                        </button>
-                        <button class="admin-action-btn perm-mute" data-action="permMute">
-                            permanent mute
-                        </button>
-                        <button class="admin-action-btn delete-msg" data-action="deleteMessage">
-                            delete message
-                        </button>
-                    </div>
-                </div>
-                <div class="admin-modal-footer">
-                    <button class="cancel-btn">cancel</button>
-                </div>
-            </div>
-        `;
-
-        // add to dom
-        document.body.appendChild(modal);
-
-        // handle closing
-        const closeModal = () => {
-            modal.remove();
-        };
-
-        modal.querySelector('.admin-modal-backdrop').addEventListener('click', closeModal);
-        modal.querySelector('.cancel-btn').addEventListener('click', closeModal);
-
-        // handle admin actions
-        const handleAdminAction = (action) => {
-            // placeholder for now - just show what would happen
-            this.showSystemMessage(`admin action: ${action} on user ${user.username}`);
-            closeModal();
-        };
-
-        modal.querySelectorAll('.admin-action-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const action = btn.dataset.action;
-                handleAdminAction(action);
-            });
-        });
-
-        // handle escape key
-        const handleEscape = (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
-
-        // cleanup listener when modal is removed
-        const observer = new MutationObserver(mutations => {
-            mutations.forEach(mutation => {
-                mutation.removedNodes.forEach(node => {
-                    if (node === modal) {
-                        document.removeEventListener('keydown', handleEscape);
-                        observer.disconnect();
-                    }
-                });
-            });
-        });
-        observer.observe(document.body, { childList: true });
     }
 }
 
