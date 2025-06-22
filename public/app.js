@@ -3892,6 +3892,9 @@ class ChatApp {
         
         let processed = text;
         
+        // Process attachment IDs first
+        processed = this.processAttachmentIDs(processed);
+        
         // Process links first (before other markdown)
         processed = this.processLinks(processed);
         
@@ -5378,10 +5381,65 @@ class ChatApp {
     }
 
     handleUnspoilerImagesCommand() {
-        // send unspoiler images command to server so it affects everyone
-        this.socket.send(JSON.stringify({
-            type: 'unspoilerImages'
-        }));
+        this.currentSettings.safety.spoilerImages = false;
+        this.saveSafetySettings();
+        this.applySafetySettings();
+    }
+    
+    // Attachment ID handling methods
+    addAttachmentIDsToInput() {
+        // Generate unique IDs for all pending files and add them to chat input
+        if (this.pendingFiles.length === 0) return;
+        
+        const attachmentIDs = [];
+        this.pendingFiles.forEach(file => {
+            const id = Math.random().toString(36).substr(2, 8);
+            // Store in global registry for later retrieval
+            window.attachmentRegistry = window.attachmentRegistry || new Map();
+            window.attachmentRegistry.set(id, file);
+            attachmentIDs.push(`$${id}$`);
+        });
+        
+        // Append IDs to input
+        const currentValue = this.chatInput.value;
+        this.chatInput.value = currentValue + (currentValue ? ' ' : '') + attachmentIDs.join(' ');
+    }
+    
+    addAttachmentIDsToDMInput(dmInputElement) {
+        // Generate unique IDs for all pending DM files and add them to DM input
+        if (this.pendingDMFiles.length === 0) return;
+        
+        const attachmentIDs = [];
+        this.pendingDMFiles.forEach(file => {
+            const id = Math.random().toString(36).substr(2, 8);
+            // Store in global registry for later retrieval
+            window.attachmentRegistry = window.attachmentRegistry || new Map();
+            window.attachmentRegistry.set(id, file);
+            attachmentIDs.push(`$${id}$`);
+        });
+        
+        // Append IDs to input
+        const currentValue = dmInputElement.value;
+        dmInputElement.value = currentValue + (currentValue ? ' ' : '') + attachmentIDs.join(' ');
+    }
+    
+    processAttachmentIDs(content) {
+        // Replace attachment ID references with their actual HTML elements
+        if (!content || typeof content !== 'string') return content;
+        
+        return content.replace(/\$([a-zA-Z0-9]+)\$/g, (match, id) => {
+            // Get attachment from global registry
+            const registry = window.attachmentRegistry || new Map();
+            const attachment = registry.get(id);
+            
+            if (attachment) {
+                // Return a placeholder or thumbnail representation
+                return `<span class="attachment-reference" data-attachment-id="${id}" title="${attachment.name || attachment.originalName}">📎 ${attachment.name || attachment.originalName}</span>`;
+            }
+            
+            // If attachment not found, return the original ID
+            return match;
+        });
     }
 }
 
