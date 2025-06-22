@@ -610,6 +610,11 @@ class ChatApp {
             ':tm:': '™️'
         };
         
+        // Enhanced cursor tracking
+        this.currentMouseX = 0;
+        this.currentMouseY = 0;
+        this.cursorInterpolationFrame = null;
+        
         this.initializeElements();
         this.attachEventListeners();
         this.initializeFaviconManager();
@@ -1897,18 +1902,28 @@ class ChatApp {
             this.socket && 
             this.socket.readyState === WebSocket.OPEN) {
             
-            // Throttle cursor updates for performance
+            // Store current mouse position for interpolation
+            this.currentMouseX = e.clientX;
+            this.currentMouseY = e.clientY;
+            
+            // Throttle cursor updates for performance - reduced for smoother experience
             if (this.cursorThrottle) {
                 clearTimeout(this.cursorThrottle);
             }
             
             this.cursorThrottle = setTimeout(() => {
+                // Add viewport offset compensation for more accurate positioning
+                const rect = document.documentElement.getBoundingClientRect();
+                const adjustedX = e.clientX - rect.left + window.scrollX;
+                const adjustedY = e.clientY - rect.top + window.scrollY;
+                
                 this.socket.send(JSON.stringify({
                     type: 'cursor',
-                    x: e.clientX,
-                    y: e.clientY
+                    x: adjustedX,
+                    y: adjustedY,
+                    timestamp: Date.now() // Add timestamp for interpolation
                 }));
-            }, 42); // ~24fps for smoother performance with less lag
+            }, 16); // ~60fps for ultra-smooth experience
         }
     }
 
@@ -1940,34 +1955,66 @@ class ChatApp {
                 cursor.style.display = 'none';
             }
             
+            // Initialize cursor data
+            cursor.dataset.prevX = data.x;
+            cursor.dataset.prevY = data.y;
+            cursor.dataset.targetX = data.x;
+            cursor.dataset.targetY = data.y;
+            cursor.dataset.lastUpdate = Date.now();
+            
             this.cursors.set(data.userId, cursor);
         }
         
-        // Update cursor position with smooth animation
-        cursor.style.transform = `translate(${data.x}px, ${data.y}px)`;
+        // Get previous position for smooth interpolation
+        const prevX = parseFloat(cursor.dataset.prevX) || data.x;
+        const prevY = parseFloat(cursor.dataset.prevY) || data.y;
+        const lastUpdate = parseInt(cursor.dataset.lastUpdate) || Date.now();
         
-        // Add movement detection for motion blur
-        const prevX = cursor.dataset.prevX || data.x;
-        const prevY = cursor.dataset.prevY || data.y;
+        // Calculate movement delta and speed for enhanced effects
         const deltaX = Math.abs(data.x - prevX);
         const deltaY = Math.abs(data.y - prevY);
-        const speed = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const timeDelta = Date.now() - lastUpdate;
+        const speed = timeDelta > 0 ? distance / timeDelta : 0;
         
-        // Apply motion blur for fast movement
-        if (speed > 15) {
+        // Store target position for interpolation
+        cursor.dataset.targetX = data.x;
+        cursor.dataset.targetY = data.y;
+        cursor.dataset.lastUpdate = Date.now();
+        
+        // Enhanced smooth animation with momentum-based easing
+        const useMomentum = distance > 5; // Use momentum for larger movements
+        const transitionDuration = useMomentum ? '0.15s' : '0.08s';
+        const easing = useMomentum ? 'cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'cubic-bezier(0.4, 0.0, 0.2, 1)';
+        
+        cursor.style.transition = `transform ${transitionDuration} ${easing}`;
+        cursor.style.transform = `translate3d(${data.x}px, ${data.y}px, 0)`;
+        
+        // Enhanced motion blur for fast movement with better thresholds
+        const speedThreshold = useMomentum ? 0.8 : 1.2;
+        if (speed > speedThreshold) {
             cursor.classList.add('moving');
-            // Remove blur after movement stops
+            
+            // Dynamic blur intensity based on speed
+            const blurIntensity = Math.min(speed * 0.5, 2);
+            cursor.style.filter = `blur(${blurIntensity}px)`;
+            
+            // Clear previous timeout and set new one
             clearTimeout(cursor.blurTimeout);
             cursor.blurTimeout = setTimeout(() => {
                 cursor.classList.remove('moving');
-            }, 150);
+                cursor.style.filter = '';
+            }, 120);
+        } else {
+            cursor.classList.remove('moving');
+            cursor.style.filter = '';
         }
         
         // Store current position for next comparison
         cursor.dataset.prevX = data.x;
         cursor.dataset.prevY = data.y;
         
-        // Add/remove typing indicator
+        // Enhanced typing indicator with smoother transitions
         if (data.isTyping) {
             // Clear any existing timeout for this user
             const existingTimeout = this.typingTimeouts.get(data.userId);
@@ -1981,7 +2028,7 @@ class ChatApp {
             const timeout = setTimeout(() => {
                 cursor.classList.remove('typing');
                 this.typingTimeouts.delete(data.userId);
-            }, 1500); // Remove after 1.5 seconds of no typing updates
+            }, 1500);
             
             this.typingTimeouts.set(data.userId, timeout);
         } else {
@@ -1994,28 +2041,28 @@ class ChatApp {
             cursor.classList.remove('typing');
         }
         
-        // Update cursor info with smooth transitions
+        // Update cursor info with enhanced smooth transitions
         const label = cursor.querySelector('.cursor-label');
         const dot = cursor.querySelector('.cursor-dot');
         
         if (label.textContent !== data.username) {
-            label.style.transition = 'all 0.3s ease';
+            label.style.transition = 'all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
             label.textContent = data.username;
         }
         
         if (dot.style.backgroundColor !== data.color) {
-            dot.style.transition = 'background-color 0.3s ease';
-            label.style.transition = 'background-color 0.3s ease';
+            dot.style.transition = 'background-color 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            label.style.transition = 'background-color 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
             dot.style.backgroundColor = data.color;
             label.style.backgroundColor = data.color;
         }
         
-        // Reset fade timeout
+        // Enhanced fade system with smoother timing
         cursor.classList.remove('fading');
         clearTimeout(cursor.fadeTimeout);
         cursor.fadeTimeout = setTimeout(() => {
             cursor.classList.add('fading');
-        }, 2000); // Fade after 2 seconds of inactivity
+        }, 3000); // Increased fade delay for better UX
     }
 
     removeCursor(userId) {
