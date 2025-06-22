@@ -4706,8 +4706,11 @@ class ChatApp {
     }
     
     handleDMMessage(data) {
+        // Determine the other participant in the conversation
+        const otherUser = data.senderUsername === this.username ? data.targetUsername : data.senderUsername;
+        
         // Generate conversation key for this DM
-        const conversationKey = this.getDMConversationKey(this.username, data.targetUsername);
+        const conversationKey = this.getDMConversationKey(this.username, otherUser);
         
         // Store the message in the conversation history
         if (!this.dmConversations.has(conversationKey)) {
@@ -4879,6 +4882,12 @@ class ChatApp {
         const dmChatHistory = document.getElementById('dmChatHistory');
         if (!dmChatHistory) return;
         
+        // Check if this message is already displayed (prevent duplicates)
+        const existingMessage = dmChatHistory.querySelector(`[data-message-id="${data.id}"]`);
+        if (existingMessage) {
+            return; // Message already displayed
+        }
+        
         // Remove loading message if it exists
         const loadingDiv = dmChatHistory.querySelector('.dm-loading');
         if (loadingDiv) {
@@ -4893,6 +4902,7 @@ class ChatApp {
         
         const messageDiv = document.createElement('div');
         messageDiv.className = 'dm-message';
+        messageDiv.setAttribute('data-message-id', data.id); // Add unique identifier
         
         // Check if this message is from the current user
         const isOwnMessage = data.senderUsername === this.username;
