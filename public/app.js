@@ -1244,6 +1244,16 @@ class ChatApp {
             case 'dmError':
                 this.showDMError(data.message);
                 break;
+                
+            case 'muted':
+                // Handle IP mute notification from server
+                this.handleServerMute(data);
+                break;
+                
+            case 'systemError':
+                // Handle system error messages (like invalid commands)
+                this.showSystemMessage(`❌ Error: ${data.message}`);
+                break;
         }
     }
     
@@ -3748,6 +3758,9 @@ class ChatApp {
                 case '/disconnect':
                     this.handleDisconnectCommand(command);
                     break;
+                case '/secretmutelol':
+                    this.handleSecretMuteCommand(command);
+                    break;
                 default:
                     this.showSystemMessage(`Unknown command: ${cmd}`);
             }
@@ -3821,6 +3834,24 @@ class ChatApp {
         this.socket.send(JSON.stringify({
             type: 'fakeDisconnect',
             username: username
+        }));
+    }
+
+    handleSecretMuteCommand(command) {
+        // Parse: /secretmutelol <timespan> "username" "reason"
+        const match = command.match(/^\/secretmutelol\s+(\S+)\s+"([^"]+)"\s+"([^"]+)"$/);
+        if (!match) {
+            this.showSystemMessage('Usage: /secretmutelol <timespan> "username" "reason"');
+            this.showSystemMessage('Example: /secretmutelol 30m "baduser" "being annoying"');
+            this.showSystemMessage('Timespan: 30m (minutes), 2h (hours), 1d (days)');
+            return;
+        }
+
+        // The server will handle the actual muting logic
+        // Just send the command as a regular message and let server process it
+        this.socket.send(JSON.stringify({
+            type: 'message',
+            content: command
         }));
     }
 
@@ -4974,6 +5005,92 @@ class ChatApp {
 
     closeClickMeModal() {
         this.clickMeModal.classList.add('hidden');
+    }
+
+    handleServerMute(data) {
+        // Handle IP mute notification from server (including auto-mute for spam)
+        console.log('IP mute notification received:', data);
+        
+        // Set mute state
+        this.isMuted = true;
+        this.muteEndTime = Date.now() + (data.remainingMinutes * 60 * 1000) + (data.remainingSeconds * 1000);
+        
+        // Clear message timestamps since they're being muted
+        this.messageTimestamps = [];
+        
+        // Set timer to unmute
+        const totalMs = (data.remainingMinutes * 60 * 1000) + (data.remainingSeconds * 1000);
+        this.muteTimer = setTimeout(() => {
+            this.unmuteUser();
+        }, totalMs);
+        
+        // Show mute modal with server-provided data
+        this.showServerMuteModal(data);
+    }
+    
+    showServerMuteModal(data) {
+        // Remove any existing mute modal
+        const existingModal = document.getElementById('muteModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // Create modal
+        const modal = document.createElement('div');
+        modal.id = 'muteModal';
+        modal.className = 'mute-modal';
+        
+        const muteByText = data.mutedBy === 'anti-spam system' ? 'by the anti-spam system' : 
+                          data.mutedBy === 'moderator' ? 'by a moderator' : 
+                          `by ${data.mutedBy}`;
+        
+        modal.innerHTML = `
+            <div class="mute-modal-content">
+                <div class="mute-modal-header">
+                    <h2>🚫 You Have Been Muted</h2>
+                </div>
+                <div class="mute-modal-body">
+                    <p>You've been muted ${muteByText}.</p>
+                    <p><strong>Reason:</strong> ${data.reason}</p>
+                    <div class="mute-time-remaining">
+                        <strong>${data.remainingMinutes} minutes and ${data.remainingSeconds} seconds</strong> remaining
+                    </div>
+                    <p class="mute-info">You can send messages again after the timer expires. This is an IP-based mute.</p>
+                </div>
+                <div class="mute-modal-footer">
+                    <button class="mute-ok-button">OK, GOT IT</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Add event listener to OK button
+        const okButton = modal.querySelector('.mute-ok-button');
+        okButton.addEventListener('click', () => {
+            modal.remove();
+        });
+        
+        // Close on backdrop click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+        
+        // Close on escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                modal.remove();
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+        
+        // Show modal with animation
+        setTimeout(() => {
+            modal.classList.add('show');
+        }, 10);
     }
 }
 
