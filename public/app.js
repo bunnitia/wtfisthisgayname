@@ -1553,7 +1553,7 @@ class ChatApp {
         contentDiv.appendChild(usernameSpan);
         // Add a colon and space after username
         const separator = document.createElement('span');
-        separator.textContent = '';
+        separator.textContent = ': ';
         separator.style.color = 'rgba(255, 255, 255, 0.8)';
         contentDiv.appendChild(separator);
         contentDiv.appendChild(contentSpan);
