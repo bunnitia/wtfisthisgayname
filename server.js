@@ -44,6 +44,28 @@ const upload = multer({
 app.use(express.static('public'));
 app.use('/uploads', express.static(uploadsDir));
 
+// File upload endpoint (MUST be before catch-all route)
+app.post('/upload', upload.array('files', 10), (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ error: 'No files uploaded' });
+        }
+
+        const uploadedFiles = req.files.map(file => ({
+            originalName: file.originalname,
+            filename: file.filename,
+            size: file.size,
+            type: file.mimetype,
+            url: `/uploads/${file.filename}`
+        }));
+
+        res.json({ files: uploadedFiles });
+    } catch (error) {
+        console.error('Upload error:', error);
+        res.status(500).json({ error: 'Upload failed' });
+    }
+});
+
 // Explicit route for the root path
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -584,28 +606,6 @@ wss.on('connection', (ws, req) => {
             });
         }
     });
-});
-
-// File upload endpoint
-app.post('/upload', upload.array('files', 10), (req, res) => {
-    try {
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ error: 'No files uploaded' });
-        }
-
-        const uploadedFiles = req.files.map(file => ({
-            originalName: file.originalname,
-            filename: file.filename,
-            size: file.size,
-            type: file.mimetype,
-            url: `/uploads/${file.filename}`
-        }));
-
-        res.json({ files: uploadedFiles });
-    } catch (error) {
-        console.error('Upload error:', error);
-        res.status(500).json({ error: 'Upload failed' });
-    }
 });
 
 const PORT = process.env.PORT || 3000;
