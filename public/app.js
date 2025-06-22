@@ -2971,6 +2971,11 @@ class ChatApp {
         img.alt = attachment.originalName;
         img.loading = 'lazy';
         
+        // auto scroll when image loads (if auto scroll is enabled)
+        img.addEventListener('load', () => {
+            this.scrollToBottom();
+        });
+        
         img.addEventListener('click', () => {
             this.openImageModal(attachment);
         });
@@ -2986,32 +2991,38 @@ class ChatApp {
     }
 
     createGifAttachment(attachment) {
-        const gifDiv = document.createElement('div');
-        gifDiv.className = 'message-gif-attachment';
+        const gifContainer = document.createElement('div');
+        gifContainer.className = 'message-gif-attachment';
         
         const img = document.createElement('img');
         img.src = attachment.url;
         img.alt = attachment.originalName;
         img.loading = 'lazy';
         
+        // auto scroll when gif loads
+        img.addEventListener('load', () => {
+            this.scrollToBottom();
+        });
+        
         // Add GIF indicator
         const gifLabel = document.createElement('div');
         gifLabel.className = 'gif-label';
         gifLabel.textContent = 'GIF';
         
+        gifContainer.appendChild(img);
+        gifContainer.appendChild(gifLabel);
+        
+        // Add click event to open image modal
         img.addEventListener('click', () => {
             this.openImageModal(attachment);
         });
         
-        gifDiv.appendChild(img);
-        gifDiv.appendChild(gifLabel);
-        
         // Apply spoiler if setting is enabled
         if (this.shouldSpoilerAttachment(attachment)) {
-            return this.createSpoilerWrapper(gifDiv, attachment);
+            return this.createSpoilerWrapper(gifContainer, attachment);
         }
         
-        return gifDiv;
+        return gifContainer;
     }
 
     createVideoAttachment(attachment) {
@@ -3025,6 +3036,11 @@ class ChatApp {
         video.style.maxWidth = '400px';
         video.style.maxHeight = '300px';
         video.style.borderRadius = '12px';
+        
+        // auto scroll when video metadata loads
+        video.addEventListener('loadedmetadata', () => {
+            this.scrollToBottom();
+        });
         
         // Add video info
         const videoInfo = document.createElement('div');
