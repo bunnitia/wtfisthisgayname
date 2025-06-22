@@ -4269,17 +4269,21 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     padding-left: 20px;
     position: relative;
     color: #cccccc;
-    line-height: 1.4;
+    line-height: 1.6;
+    display: block;
 }
 
 .changelog-group ul ul {
     margin-top: 8px;
+    margin-bottom: 8px;
     padding-left: 20px;
 }
 
 .changelog-group ul ul li {
     font-size: 0.9em;
     color: #aaaaaa;
+    margin-bottom: 6px;
+    line-height: 1.5;
 }
 
 .changelog-footer {
