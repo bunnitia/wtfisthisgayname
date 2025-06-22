@@ -5290,18 +5290,45 @@ class ChatApp {
     }
 
     processChangelogMarkdown() {
-        // Process all changelog content through markdown
-        const changelogSections = document.querySelectorAll('.changelog-section');
+        // process markdown in changelog sections without losing line breaks
+        const changelogSections = document.querySelectorAll('.changelog-section:not([data-processed])');
         changelogSections.forEach(section => {
-            const textElements = section.querySelectorAll('h3, h4, li, p');
-            textElements.forEach(element => {
-                if (!element.dataset.processed) {
-                    const originalText = element.textContent;
-                    const processedText = this.processMarkdown(originalText);
-                    element.innerHTML = processedText;
-                    element.dataset.processed = 'true';
+            // process each text node individually to preserve HTML structure
+            this.processTextNodesRecursively(section);
+            section.setAttribute('data-processed', 'true');
+        });
+    }
+
+    processTextNodesRecursively(element) {
+        const walker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            textNodes.push(node);
+        }
+        
+        textNodes.forEach(textNode => {
+            const originalText = textNode.textContent;
+            const processedText = this.processMarkdown(originalText);
+            
+            if (originalText !== processedText) {
+                // create a temporary container to parse the HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = processedText;
+                
+                // replace the text node with the processed content
+                const parent = textNode.parentNode;
+                while (tempDiv.firstChild) {
+                    parent.insertBefore(tempDiv.firstChild, textNode);
                 }
-            });
+                parent.removeChild(textNode);
+            }
         });
     }
 }
