@@ -1025,6 +1025,11 @@ class ChatApp {
                     this.clearReply();
                 }
             }
+            
+            // Auto-focus chat input when typing starts
+            if (this.shouldAutoFocusInput(e)) {
+                this.autoFocusChatInput(e);
+            }
         });
         
         // Mouse tracking for live cursors
@@ -5157,6 +5162,61 @@ class ChatApp {
 
     closeClickMeModal() {
         this.clickMeModal.classList.add('hidden');
+    }
+
+    // Auto-focus helper methods
+    shouldAutoFocusInput(e) {
+        // Don't auto-focus if any input/textarea is already focused
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+            return false;
+        }
+        
+        // Don't auto-focus if any modal is open
+        if (!this.settingsModal.classList.contains('hidden') ||
+            !this.emojiPickerModal.classList.contains('hidden') ||
+            !this.clickMeModal.classList.contains('hidden') ||
+            !this.mentionDropdown.classList.contains('hidden')) {
+            return false;
+        }
+        
+        // Don't auto-focus for special keys
+        const specialKeys = ['Escape', 'Tab', 'Enter', 'Shift', 'Control', 'Alt', 'Meta', 
+                           'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 
+                           'PageUp', 'PageDown', 'Delete', 'Backspace', 'F1', 'F2', 'F3', 
+                           'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12'];
+        
+        if (specialKeys.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) {
+            return false;
+        }
+        
+        // Check if it's a printable character
+        return e.key.length === 1;
+    }
+    
+    autoFocusChatInput(e) {
+        // Check if DM modal is open
+        const dmModal = document.querySelector('.dm-modal');
+        if (dmModal && !dmModal.classList.contains('hidden')) {
+            const dmInput = dmModal.querySelector('.dm-chat-input');
+            if (dmInput && !dmInput.disabled) {
+                dmInput.focus();
+                // Place cursor at end and insert the typed character
+                dmInput.setSelectionRange(dmInput.value.length, dmInput.value.length);
+                dmInput.value += e.key;
+                e.preventDefault();
+                return;
+            }
+        }
+        
+        // Otherwise focus the main chat input
+        if (this.chatInput && !this.chatInput.disabled && !this.loginScreen.classList.contains('hidden') === false) {
+            this.chatInput.focus();
+            // Place cursor at end and insert the typed character
+            this.chatInput.setSelectionRange(this.chatInput.value.length, this.chatInput.value.length);
+            this.chatInput.value += e.key;
+            e.preventDefault();
+        }
     }
 }
 
