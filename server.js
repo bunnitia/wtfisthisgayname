@@ -165,9 +165,20 @@ function addDMMessage(ip1, ip2, message) {
 // Broadcast message to all connected clients
 function broadcast(message, excludeClient = null) {
     const messageString = JSON.stringify(message);
-    wss.clients.forEach(client => {
-        if (client !== excludeClient && client.readyState === WebSocket.OPEN) {
-            client.send(messageString);
+    console.log(`📢 Broadcasting ${message.type} to ${clients.size} clients`);
+    
+    clients.forEach((client, clientId) => {
+        if (client.ws && client.ws !== excludeClient && client.ws.readyState === WebSocket.OPEN) {
+            try {
+                client.ws.send(messageString);
+                console.log(`✅ Sent ${message.type} to ${client.username}`);
+            } catch (error) {
+                console.error(`❌ Error sending message to ${client.username}:`, error);
+                // Remove broken client connection
+                clients.delete(clientId);
+            }
+        } else {
+            console.log(`⚠️  Skipping ${client.username} - ws state: ${client.ws ? client.ws.readyState : 'no ws'}`);
         }
     });
 }
@@ -206,11 +217,18 @@ wss.on('connection', (ws, req) => {
                     };
                     clients.set(clientId, clientInfo);
                     
+                    console.log(`👋 User ${message.username} joined. Sending ${chatHistory.length} messages from history`);
+                    
                     // Send chat history to new client
-                    ws.send(JSON.stringify({
-                        type: 'history',
-                        messages: chatHistory
-                    }));
+                    try {
+                        ws.send(JSON.stringify({
+                            type: 'history',
+                            messages: chatHistory
+                        }));
+                        console.log(`✅ History sent to ${message.username}`);
+                    } catch (error) {
+                        console.error(`❌ Failed to send history to ${message.username}:`, error);
+                    }
                     
                     // Send updated user list to all clients
                     broadcast({
