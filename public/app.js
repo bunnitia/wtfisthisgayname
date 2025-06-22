@@ -3985,6 +3985,11 @@ class ChatApp {
         this.closeSpoilerWarning();
         const spoilerElement = document.querySelector(`[data-spoiler-id="${spoilerId}"]`);
         if (spoilerElement) {
+            // Get the original content from data attribute
+            const originalContent = spoilerElement.getAttribute('data-content');
+            if (originalContent) {
+                spoilerElement.innerHTML = originalContent;
+            }
             spoilerElement.classList.add('revealed');
             spoilerElement.onclick = null; // Remove click handler
         }
