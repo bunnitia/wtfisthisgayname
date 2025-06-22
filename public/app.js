@@ -5159,6 +5159,9 @@ class ChatApp {
     openClickMeModal() {
         this.clickMeModal.classList.remove('hidden');
         
+        // Process markdown in changelog content
+        this.processChangelogMarkdown();
+        
         // Add event listeners for tabs and changelog categories
         this.setupClickMeModalListeners();
     }
@@ -5284,6 +5287,22 @@ class ChatApp {
             this.chatInput.value += e.key;
             e.preventDefault();
         }
+    }
+
+    processChangelogMarkdown() {
+        // Process all changelog content through markdown
+        const changelogSections = document.querySelectorAll('.changelog-section');
+        changelogSections.forEach(section => {
+            const textElements = section.querySelectorAll('h3, h4, li, p');
+            textElements.forEach(element => {
+                if (!element.dataset.processed) {
+                    const originalText = element.textContent;
+                    const processedText = this.processMarkdown(originalText);
+                    element.innerHTML = processedText;
+                    element.dataset.processed = 'true';
+                }
+            });
+        });
     }
 }
 
