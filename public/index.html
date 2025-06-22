@@ -11,15 +11,26 @@
     <div id="loginScreen" class="login-screen">
         <div class="login-container">
             <h1>Join Chat</h1>
+            
             <div class="input-group">
-                <label for="username">Username (max 24 characters)</label>
-                <input type="text" id="username" maxlength="24" placeholder="Enter your username">
+                <label for="displayName">Your Display Name</label>
+                <input type="text" id="displayName" maxlength="50" placeholder="Enter your display name">
+                <div class="input-hint">This is what people will see in chat</div>
             </div>
+            
             <div class="input-group">
                 <label for="colorPicker">Choose your color</label>
                 <input type="color" id="colorPicker" value="#ff6b6b">
             </div>
-            <button id="joinButton" class="join-button">Join</button>
+            
+            <div class="input-group">
+                <label for="username">Your @username</label>
+                <input type="text" id="username" maxlength="16" placeholder="username123">
+                <div class="input-hint">Max 16 characters, letters/numbers/underscores only. Must be unique.</div>
+                <div class="username-status" id="usernameStatus"></div>
+            </div>
+            
+            <button id="joinButton" class="join-button" disabled>Join</button>
         </div>
     </div>
 

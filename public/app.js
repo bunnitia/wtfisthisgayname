@@ -2,8 +2,9 @@ class ChatApp {
     constructor() {
         this.socket = null;
         this.username = '';
+        this.displayName = '';
         this.userColor = '#ff6b6b';
-        this.userWebsite = ''; // Add website field
+        this.userWebsite = '';
         this.currentUserId = null;
         this.isTyping = false;
         this.typingTimeout = null;
@@ -13,6 +14,8 @@ class ChatApp {
         this.replyingTo = null; // Current message being replied to
         this.messageElements = new Map(); // Store message elements by ID for jumping
         this.autoScrollEnabled = true; // Auto scroll state
+        this.isRegistering = false; // track registration state
+        this.usernameCheckTimeout = null; // debounce username checking
         this.currentSettings = {
             appearance: {
                 gradientColor1: '#1a1a2e',
