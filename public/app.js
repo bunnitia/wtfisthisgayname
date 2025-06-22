@@ -3762,6 +3762,9 @@ class ChatApp {
                 case '/disconnect':
                     this.handleDisconnectCommand(command);
                     break;
+                case '/clearchat':
+                    this.handleClearChatCommand();
+                    break;
                 default:
                     this.showSystemMessage(`Unknown command: ${cmd}`);
             }
@@ -5330,6 +5333,17 @@ class ChatApp {
                 parent.removeChild(textNode);
             }
         });
+    }
+
+    handleClearChatCommand() {
+        // clear the chat history
+        const chatHistory = document.getElementById('chatHistory');
+        if (chatHistory) {
+            chatHistory.innerHTML = '';
+        }
+        
+        // show "cleared chat" system message
+        this.showSystemMessage('Cleared chat');
     }
 }
 
