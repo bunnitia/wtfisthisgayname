@@ -3852,6 +3852,18 @@ class ChatApp {
         // Process links first (before other markdown)
         processed = this.processLinks(processed);
         
+        // Warning spoilers: ||||text|||| -> spoiler with warning
+        processed = processed.replace(/\|\|\|\|(.*?)\|\|\|\|/g, (match, content) => {
+            const spoilerId = 'spoiler-' + Math.random().toString(36).substr(2, 9);
+            return `<span class="spoiler-text warning-spoiler" data-spoiler-id="${spoilerId}" data-content="${this.escapeHtml(content)}" onclick="chatApp.showSpoilerWarning('${spoilerId}', '${this.escapeHtml(content)}')">Click to reveal spoiler (Warning)</span>`;
+        });
+        
+        // Regular spoilers: ||text|| -> clickable spoiler
+        processed = processed.replace(/\|\|(.*?)\|\|/g, (match, content) => {
+            const spoilerId = 'spoiler-' + Math.random().toString(36).substr(2, 9);
+            return `<span class="spoiler-text" data-spoiler-id="${spoilerId}" onclick="chatApp.revealSpoiler('${spoilerId}')">${this.escapeHtml(content)}</span>`;
+        });
+        
         // Bold text: **text** -> <strong>text</strong>
         processed = processed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         
@@ -3892,6 +3904,90 @@ class ChatApp {
     handleLinkClick(event, url) {
         event.preventDefault();
         this.showWebsiteWarning('External Link', url);
+    }
+
+    // Reveal regular spoiler text
+    revealSpoiler(spoilerId) {
+        const spoilerElement = document.querySelector(`[data-spoiler-id="${spoilerId}"]`);
+        if (spoilerElement) {
+            spoilerElement.classList.add('revealed');
+            spoilerElement.onclick = null; // Remove click handler
+        }
+    }
+
+    // Show warning for spoiler with warning
+    showSpoilerWarning(spoilerId, content) {
+        const spoilerElement = document.querySelector(`[data-spoiler-id="${spoilerId}"]`);
+        if (!spoilerElement) return;
+        
+        // Find the message sender (traverse up to find username)
+        let messageElement = spoilerElement.closest('.chat-message') || spoilerElement.closest('.dm-message');
+        let senderName = 'Someone';
+        
+        if (messageElement) {
+            const usernameElement = messageElement.querySelector('.username') || messageElement.querySelector('.dm-message-sender');
+            if (usernameElement) {
+                senderName = usernameElement.textContent;
+            }
+        }
+        
+        // Create warning modal
+        const modal = document.createElement('div');
+        modal.className = 'spoiler-warning-modal';
+        modal.innerHTML = `
+            <div class="spoiler-warning-backdrop"></div>
+            <div class="spoiler-warning-content">
+                <h3>⚠️ Spoiler Warning</h3>
+                <p>This content might reveal text/media you don't want to see.</p>
+                <p><strong>${this.escapeHtml(senderName)}</strong> probably intentionally gave this a warning when you try to reveal it.</p>
+                <div class="spoiler-warning-buttons">
+                    <button class="cancel-btn" onclick="chatApp.closeSpoilerWarning()">CANCEL</button>
+                    <button class="reveal-btn" onclick="chatApp.revealWarningSpoiler('${spoilerId}')">REVEAL</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Store modal reference for cleanup
+        this.currentSpoilerModal = modal;
+        
+        // Handle escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                this.closeSpoilerWarning();
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+        
+        // Show modal with animation
+        setTimeout(() => {
+            modal.classList.add('show');
+        }, 10);
+    }
+
+    // Close spoiler warning modal
+    closeSpoilerWarning() {
+        if (this.currentSpoilerModal) {
+            this.currentSpoilerModal.classList.remove('show');
+            setTimeout(() => {
+                if (this.currentSpoilerModal && this.currentSpoilerModal.parentNode) {
+                    this.currentSpoilerModal.remove();
+                }
+                this.currentSpoilerModal = null;
+            }, 300);
+        }
+    }
+
+    // Reveal warning spoiler after confirmation
+    revealWarningSpoiler(spoilerId) {
+        this.closeSpoilerWarning();
+        const spoilerElement = document.querySelector(`[data-spoiler-id="${spoilerId}"]`);
+        if (spoilerElement) {
+            spoilerElement.classList.add('revealed');
+            spoilerElement.onclick = null; // Remove click handler
+        }
     }
 
     // Emoji picker methods
