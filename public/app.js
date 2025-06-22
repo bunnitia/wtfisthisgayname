@@ -1260,6 +1260,27 @@ class ChatApp {
                 // show "cleared chat" system message
                 this.showSystemMessage('Cleared chat');
                 break;
+                
+            case 'unspoilerImages':
+                // turn off spoiler images setting for everyone
+                const spoilerImagesCheckbox = document.getElementById('spoilerImages');
+                if (spoilerImagesCheckbox) {
+                    spoilerImagesCheckbox.checked = false;
+                }
+                
+                // save the setting and apply it
+                this.saveSafetySettings();
+                this.applySafetySettings();
+                
+                // show system message
+                this.showSystemMessage('Spoiler images setting has been turned off for everyone');
+                break;
+            case '/clearchat':
+                this.handleClearChatCommand();
+                break;
+            case '/unspoilerimagesforeveryone':
+                this.handleUnspoilerImagesCommand();
+                break;
         }
     }
     
@@ -3776,6 +3797,9 @@ class ChatApp {
                 case '/clearchat':
                     this.handleClearChatCommand();
                     break;
+                case '/unspoilerimagesforeveryone':
+                    this.handleUnspoilerImagesCommand();
+                    break;
                 default:
                     this.showSystemMessage(`Unknown command: ${cmd}`);
             }
@@ -5350,6 +5374,13 @@ class ChatApp {
         // send clear chat command to server so it clears for everyone
         this.socket.send(JSON.stringify({
             type: 'clearChat'
+        }));
+    }
+
+    handleUnspoilerImagesCommand() {
+        // send unspoiler images command to server so it affects everyone
+        this.socket.send(JSON.stringify({
+            type: 'unspoilerImages'
         }));
     }
 }
