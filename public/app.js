@@ -2815,6 +2815,7 @@ class ChatApp {
         this.attachmentPreview.innerHTML = `
             <div class="attachment-header">
                 <span class="attachment-title">${this.pendingFiles.length} file(s) attached</span>
+                <button class="generate-ids-btn">Generate IDs</button>
                 <button class="clear-attachments">Clear All</button>
             </div>
             <div class="attachment-list"></div>
@@ -2823,6 +2824,11 @@ class ChatApp {
         const clearButton = this.attachmentPreview.querySelector('.clear-attachments');
         clearButton.addEventListener('click', () => {
             this.clearAttachments();
+        });
+
+        const generateIDsButton = this.attachmentPreview.querySelector('.generate-ids-btn');
+        generateIDsButton.addEventListener('click', () => {
+            this.addAttachmentIDsToInput();
         });
 
         return this.attachmentPreview.querySelector('.attachment-list');
