@@ -1249,6 +1249,17 @@ class ChatApp {
             case 'dmError':
                 this.showDMError(data.message);
                 break;
+                
+            case 'clearChat':
+                // clear the chat history for everyone
+                const chatHistory = document.getElementById('chatHistory');
+                if (chatHistory) {
+                    chatHistory.innerHTML = '';
+                }
+                
+                // show "cleared chat" system message
+                this.showSystemMessage('Cleared chat');
+                break;
         }
     }
     
@@ -5336,14 +5347,10 @@ class ChatApp {
     }
 
     handleClearChatCommand() {
-        // clear the chat history
-        const chatHistory = document.getElementById('chatHistory');
-        if (chatHistory) {
-            chatHistory.innerHTML = '';
-        }
-        
-        // show "cleared chat" system message
-        this.showSystemMessage('Cleared chat');
+        // send clear chat command to server so it clears for everyone
+        this.socket.send(JSON.stringify({
+            type: 'clearChat'
+        }));
     }
 }
 
