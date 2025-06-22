@@ -43,6 +43,15 @@ class ChatApp {
         // User websites storage for clickable usernames
         this.userWebsites = new Map();
         
+        // DM functionality
+        this.currentDMUser = null; // Currently open DM conversation
+        this.dmConversations = new Map(); // Store DM history by conversation pair key
+        
+        // Generate conversation key for DM storage (similar to server)
+        this.getDMConversationKey = (username1, username2) => {
+            return [username1, username2].sort().join('_');
+        };
+        
         // Emoji mapping for :emoji_name: format
         this.emojiMap = {
             // Smileys & People
@@ -701,6 +710,12 @@ class ChatApp {
         this.sidebarItems = document.querySelectorAll('.sidebar-item');
         this.settingSections = document.querySelectorAll('.settings-section');
         
+        // Click Me elements
+        this.clickMeButton = document.getElementById('clickMeButton');
+        this.clickMeModal = document.getElementById('clickMeModal');
+        this.closeClickMe = document.getElementById('closeClickMe');
+        this.clickMeBackdrop = document.querySelector('.click-me-backdrop');
+        
         // Reply elements (will be created dynamically)
         this.replyContainer = null;
         
@@ -1004,6 +1019,8 @@ class ChatApp {
                     this.closeEmojiPickerModal();
                 } else if (!this.settingsModal.classList.contains('hidden')) {
                     this.closeSettingsModal();
+                } else if (!this.clickMeModal.classList.contains('hidden')) {
+                    this.closeClickMeModal();
                 } else if (this.replyingTo) {
                     this.clearReply();
                 }
@@ -1049,6 +1066,19 @@ class ChatApp {
             if (!this.mentionDropdown.contains(e.target) && !this.chatInput.contains(e.target)) {
                 this.closeMentionDropdown();
             }
+        });
+
+        // Click Me button functionality
+        this.clickMeButton.addEventListener('click', () => {
+            this.openClickMeModal();
+        });
+
+        this.closeClickMe.addEventListener('click', () => {
+            this.closeClickMeModal();
+        });
+
+        this.clickMeBackdrop.addEventListener('click', () => {
+            this.closeClickMeModal();
         });
     }
     
@@ -1201,6 +1231,18 @@ class ChatApp {
                 break;
             case 'systemMessage':
                 this.showSystemMessage(data.message);
+                break;
+                
+            case 'dmMessage':
+                this.handleDMMessage(data);
+                break;
+                
+            case 'dmHistory':
+                this.handleDMHistory(data);
+                break;
+                
+            case 'dmError':
+                this.showDMError(data.message);
                 break;
         }
     }
@@ -1363,6 +1405,72 @@ class ChatApp {
         // Store the message element for reply lookups
         this.messageElements.set(data.id, messageElement);
         
+        // Handle DM notification messages differently
+        if (data.type === 'dmNotification') {
+            this.createDMNotificationMessage(messageElement, data);
+        } else {
+            this.createRegularMessage(messageElement, data);
+        }
+        
+        this.chatHistory.appendChild(messageElement);
+        this.scrollToBottom();
+        
+        // Maintain max 128 messages
+        const messages = this.chatHistory.children;
+        if (messages.length > 128) {
+            const removedMessage = messages[0];
+            const removedId = removedMessage.dataset.messageId;
+            if (removedId) {
+                this.messageElements.delete(removedId);
+            }
+            removedMessage.remove();
+        }
+    }
+    
+    createDMNotificationMessage(messageElement, data) {
+        messageElement.classList.add('dm-notification-message');
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-main dm-notification-main';
+        
+        // Create the REPLY PRIVATELY button
+        const replyButton = document.createElement('button');
+        replyButton.className = 'dm-notification-reply-btn';
+        replyButton.textContent = '[REPLY PRIVATELY]';
+        replyButton.addEventListener('click', () => {
+            this.openDMModal({ username: data.dmSender, color: data.dmSenderColor });
+        });
+        
+        // Create the "(DM) from <name>:" part
+        const dmFromSpan = document.createElement('span');
+        dmFromSpan.className = 'dm-notification-from';
+        dmFromSpan.textContent = `(DM) from ${data.dmSender}:`;
+        
+        // Create the message content
+        const contentSpan = document.createElement('span');
+        contentSpan.className = 'dm-notification-content';
+        // Process emojis, censor swear words, and process mentions
+        const processedContent = this.processEmojis(data.content);
+        const censoredContent = this.censorSwearWords(processedContent);
+        const mentionedContent = this.processMentions(censoredContent);
+        contentSpan.innerHTML = mentionedContent;
+        // Use darker version of sender's color
+        const darkerColor = this.getDarkerColor(data.dmSenderColor);
+        contentSpan.style.color = darkerColor;
+        
+        contentDiv.appendChild(replyButton);
+        contentDiv.appendChild(document.createTextNode(' '));
+        contentDiv.appendChild(dmFromSpan);
+        contentDiv.appendChild(document.createTextNode(' '));
+        contentDiv.appendChild(contentSpan);
+        
+        messageElement.appendChild(contentDiv);
+        
+        // Add special hover effects for DM notifications
+        this.addDMNotificationHoverEffects(messageElement, data);
+    }
+    
+    createRegularMessage(messageElement, data) {
         // Check if this is a reply and display reply indicator
         if (data.replyTo) {
             console.log('🔧 Creating reply indicator...');
@@ -1467,20 +1575,58 @@ class ChatApp {
         
         // Add hover functionality
         this.addMessageHoverEffects(messageElement, data);
+    }
+    
+    getDarkerColor(hexColor) {
+        // Remove # if present
+        const color = hexColor.replace('#', '');
         
-        this.chatHistory.appendChild(messageElement);
-        this.scrollToBottom();
+        // Parse RGB values
+        const r = parseInt(color.substr(0, 2), 16);
+        const g = parseInt(color.substr(2, 2), 16);
+        const b = parseInt(color.substr(4, 2), 16);
         
-        // Maintain max 128 messages
-        const messages = this.chatHistory.children;
-        if (messages.length > 128) {
-            const removedMessage = messages[0];
-            const removedId = removedMessage.dataset.messageId;
-            if (removedId) {
-                this.messageElements.delete(removedId);
+        // Make it darker (reduce by 40%)
+        const newR = Math.floor(r * 0.6);
+        const newG = Math.floor(g * 0.6);
+        const newB = Math.floor(b * 0.6);
+        
+        // Convert back to hex
+        return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+    }
+    
+    addDMNotificationHoverEffects(messageDiv, data) {
+        const showHover = () => {
+            let hoverControls = messageDiv.querySelector('.message-hover-controls');
+            if (!hoverControls) {
+                hoverControls = document.createElement('div');
+                hoverControls.className = 'message-hover-controls dm-notification-controls';
+                
+                // Create reply button that opens DM modal
+                const replyBtn = document.createElement('button');
+                replyBtn.className = 'reply-btn dm-notification-reply-hover';
+                replyBtn.innerHTML = '↩';
+                replyBtn.title = 'Open DM with ' + data.dmSender;
+                replyBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.openDMModal({ username: data.dmSender, color: data.dmSenderColor });
+                });
+                
+                hoverControls.appendChild(replyBtn);
+                messageDiv.appendChild(hoverControls);
             }
-            removedMessage.remove();
-        }
+            hoverControls.style.opacity = '1';
+        };
+        
+        const hideHover = () => {
+            const hoverControls = messageDiv.querySelector('.message-hover-controls');
+            if (hoverControls) {
+                hoverControls.style.opacity = '0';
+            }
+        };
+        
+        messageDiv.addEventListener('mouseenter', showHover);
+        messageDiv.addEventListener('mouseleave', hideHover);
     }
     
     loadChatHistory(messages) {
@@ -1512,12 +1658,18 @@ class ChatApp {
         });
         
         users.forEach(user => {
-            const userTag = document.createElement('div');
-            userTag.className = 'user-tag';
+            const userTag = document.createElement('button');
+            userTag.className = 'user-tag clickable-username';
             userTag.textContent = user.username;
             userTag.style.borderColor = user.color;
-            userTag.style.color = user.color; // Add color for mention system
+            userTag.style.color = user.color;
             userTag.setAttribute('data-user-id', user.id);
+            userTag.setAttribute('data-username', user.username);
+            
+            // Add click handler
+            userTag.addEventListener('click', () => {
+                this.handleUsernameClick(user);
+            });
             
             this.userList.appendChild(userTag);
         });
@@ -4140,6 +4292,678 @@ class ChatApp {
         } catch (error) {
             console.error('Error playing mention sound:', error);
         }
+    }
+
+    handleUsernameClick(user) {
+        // If clicking your own username, open settings
+        if (user.username === this.username) {
+            this.openSettings();
+            return;
+        }
+        
+        // If clicking someone else's username, open DM modal
+        this.openDMModal(user);
+    }
+
+    openDMModal(user) {
+        // Remove existing DM modal if it exists
+        const existingModal = document.getElementById('dmModal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // Set current DM user
+        this.currentDMUser = user;
+        
+        // Initialize DM file handling
+        this.dmPendingFiles = [];
+        this.dmIsUploading = false;
+        
+        // Create DM modal with frosted glass design
+        const dmModal = document.createElement('div');
+        dmModal.id = 'dmModal';
+        dmModal.className = 'dm-modal';
+        
+        dmModal.innerHTML = `
+            <div class="dm-backdrop"></div>
+            <div class="dm-container">
+                <div class="dm-header">
+                    <div class="dm-header-info">
+                        <h2>Direct Message</h2>
+                        <span class="dm-username" style="color: ${user.color || '#ff6b6b'}">${user.username}</span>
+                    </div>
+                    <button class="close-button" id="closeDM">×</button>
+                </div>
+                <div class="dm-content">
+                    <div class="dm-chat-history" id="dmChatHistory">
+                        <div class="dm-loading">Loading conversation...</div>
+                    </div>
+                    
+                    <!-- DM File Upload (hidden) -->
+                    <input type="file" id="dmFileInput" multiple accept="*/*" style="display: none;">
+                    
+                    <!-- DM Attachment Preview Area -->
+                    <div id="dmAttachmentPreview" class="dm-attachment-preview hidden"></div>
+                    
+                    <!-- DM Upload Progress Bar -->
+                    <div id="dmUploadProgress" class="dm-upload-progress hidden">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <span class="progress-text">Uploading...</span>
+                    </div>
+                    
+                    <div class="dm-input-container">
+                        <button class="dm-attach-button" title="Attach files or paste from clipboard">📎</button>
+                        <input type="text" class="dm-chat-input" placeholder="Type a direct message..." maxlength="2000">
+                        <button class="dm-send-button" title="Send message">→</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dmModal);
+        
+        // Get references to elements
+        const closeDMBtn = dmModal.querySelector('#closeDM');
+        const dmBackdrop = dmModal.querySelector('.dm-backdrop');
+        const dmInput = dmModal.querySelector('.dm-chat-input');
+        const sendBtn = dmModal.querySelector('.dm-send-button');
+        const attachBtn = dmModal.querySelector('.dm-attach-button');
+        const dmFileInput = dmModal.querySelector('#dmFileInput');
+        const dmInputContainer = dmModal.querySelector('.dm-input-container');
+        
+        // Add event listeners
+        closeDMBtn.addEventListener('click', () => this.closeDMModal());
+        dmBackdrop.addEventListener('click', () => this.closeDMModal());
+        
+        // Send message functionality
+        const sendMessage = () => {
+            const content = dmInput.value.trim();
+            if (this.dmIsUploading || (!content && this.dmPendingFiles.length === 0)) return;
+            
+            // Use already uploaded files (they were uploaded when selected)
+            const attachments = this.dmPendingFiles.filter(file => file.url);
+            
+            if (content || attachments.length > 0) {
+                this.sendDMMessage(user.username, content, attachments);
+                dmInput.value = '';
+                this.clearDMAttachments();
+            }
+        };
+        
+        sendBtn.addEventListener('click', sendMessage);
+        dmInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // File attachment functionality
+        attachBtn.addEventListener('click', () => {
+            if (!this.dmIsUploading) {
+                dmFileInput.click();
+            }
+        });
+        
+        dmFileInput.addEventListener('change', (e) => {
+            this.handleDMFileSelection(e.target.files);
+        });
+        
+        // Paste event for files in DM
+        dmInput.addEventListener('paste', (e) => {
+            this.handleDMPaste(e);
+        });
+        
+        // Drag and drop events for DM
+        dmInputContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dmInputContainer.classList.add('drag-over');
+        });
+        
+        dmInputContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dmInputContainer.classList.remove('drag-over');
+        });
+        
+        dmInputContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dmInputContainer.classList.remove('drag-over');
+            this.handleDMFileSelection(e.dataTransfer.files);
+        });
+        
+        // Focus the input
+        setTimeout(() => dmInput.focus(), 100);
+        
+        // Handle escape key
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                this.closeDMModal();
+                document.removeEventListener('keydown', handleEscape);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+        
+        // Request DM history from server
+        this.requestDMHistory(user.username);
+    }
+    
+    // DM File Handling Methods
+    handleDMFileSelection(files) {
+        if (files.length === 0) return;
+        
+        const filesArray = Array.from(files);
+        this.dmPendingFiles.push(...filesArray);
+        this.updateDMAttachmentPreview();
+        
+        // Immediately start uploading files in the background
+        this.uploadDMSelectedFiles();
+    }
+    
+    async uploadDMSelectedFiles() {
+        if (this.dmPendingFiles.length === 0 || this.dmIsUploading) return;
+        
+        try {
+            const uploadedFiles = await this.uploadDMFiles();
+            
+            // Replace pending files with uploaded file data
+            this.dmPendingFiles = uploadedFiles;
+            this.updateDMAttachmentPreview();
+            
+        } catch (error) {
+            console.error('Failed to upload DM files:', error);
+            // Show user-friendly error message
+            this.updateDMUploadProgress(0, 'Upload failed. Please try again.');
+            setTimeout(() => {
+                const dmUploadProgress = document.getElementById('dmUploadProgress');
+                if (dmUploadProgress) {
+                    dmUploadProgress.classList.add('hidden');
+                }
+            }, 2000);
+        }
+    }
+    
+    handleDMPaste(event) {
+        const items = event.clipboardData?.items;
+        if (!items) return;
+
+        const files = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.kind === 'file') {
+                event.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                    files.push(file);
+                }
+            }
+        }
+
+        if (files.length > 0) {
+            this.handleDMFileSelection(files);
+        }
+    }
+    
+    updateDMAttachmentPreview() {
+        const dmAttachmentPreview = document.getElementById('dmAttachmentPreview');
+        if (!dmAttachmentPreview) return;
+        
+        if (this.dmPendingFiles.length === 0) {
+            dmAttachmentPreview.classList.add('hidden');
+            return;
+        }
+        
+        const previewHtml = this.dmPendingFiles.map((file, index) => {
+            const fileName = file.originalName || file.name;
+            const fileSize = file.size || 0;
+            const fileType = file.type || file.mimetype || '';
+            
+            return `
+                <div class="attachment-item">
+                    <span class="attachment-icon">${this.getFileIconByType(fileType)}</span>
+                    <div class="attachment-info">
+                        <span class="attachment-name">${fileName}</span>
+                        <span class="attachment-size">${this.formatFileSize(fileSize)}</span>
+                    </div>
+                    <button class="remove-attachment" onclick="chatApp.removeDMAttachment(${index})">×</button>
+                </div>
+            `;
+        }).join('');
+        
+        dmAttachmentPreview.innerHTML = `
+            <div class="attachment-header">
+                <span class="attachment-title">${this.dmPendingFiles.length} file(s) attached</span>
+                <button class="clear-attachments" onclick="chatApp.clearDMAttachments()">Clear All</button>
+            </div>
+            <div class="attachment-list">${previewHtml}</div>
+        `;
+        dmAttachmentPreview.classList.remove('hidden');
+    }
+    
+    clearDMAttachments() {
+        this.dmPendingFiles = [];
+        this.updateDMAttachmentPreview();
+        const dmFileInput = document.getElementById('dmFileInput');
+        if (dmFileInput) {
+            dmFileInput.value = '';
+        }
+    }
+    
+    removeDMAttachment(index) {
+        this.dmPendingFiles.splice(index, 1);
+        this.updateDMAttachmentPreview();
+    }
+    
+    async uploadDMFiles() {
+        if (this.dmPendingFiles.length === 0) return [];
+        
+        this.dmIsUploading = true;
+        const dmUploadProgress = document.getElementById('dmUploadProgress');
+        if (dmUploadProgress) {
+            dmUploadProgress.classList.remove('hidden');
+        }
+        this.updateDMUploadProgress(0, 'Preparing upload...');
+        
+        try {
+            const formData = new FormData();
+            
+            this.dmPendingFiles.forEach(file => {
+                formData.append('files', file);
+            });
+            
+            const xhr = new XMLHttpRequest();
+            
+            return new Promise((resolve, reject) => {
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const progress = e.loaded / e.total;
+                        this.updateDMUploadProgress(progress, `Uploading... ${Math.round(progress * 100)}%`);
+                    }
+                });
+                
+                xhr.addEventListener('load', () => {
+                    if (xhr.status === 200) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            this.updateDMUploadProgress(1, 'Upload complete!');
+                            
+                            // Hide progress after a short delay
+                            setTimeout(() => {
+                                this.dmIsUploading = false;
+                                const dmUploadProgress = document.getElementById('dmUploadProgress');
+                                if (dmUploadProgress) {
+                                    dmUploadProgress.classList.add('hidden');
+                                }
+                            }, 500);
+                            
+                            resolve(response.files);
+                        } catch (error) {
+                            console.error('Failed to parse DM upload response:', error);
+                            this.dmIsUploading = false;
+                            const dmUploadProgress = document.getElementById('dmUploadProgress');
+                            if (dmUploadProgress) {
+                                dmUploadProgress.classList.add('hidden');
+                            }
+                            reject(new Error('Invalid server response'));
+                        }
+                    } else {
+                        console.error('DM Upload failed with status:', xhr.status);
+                        this.dmIsUploading = false;
+                        const dmUploadProgress = document.getElementById('dmUploadProgress');
+                        if (dmUploadProgress) {
+                            dmUploadProgress.classList.add('hidden');
+                        }
+                        reject(new Error(`Upload failed: ${xhr.status}`));
+                    }
+                });
+                
+                xhr.addEventListener('error', (e) => {
+                    console.error('DM Upload error:', e);
+                    this.dmIsUploading = false;
+                    const dmUploadProgress = document.getElementById('dmUploadProgress');
+                    if (dmUploadProgress) {
+                        dmUploadProgress.classList.add('hidden');
+                    }
+                    reject(new Error('Upload failed'));
+                });
+                
+                xhr.addEventListener('timeout', () => {
+                    console.error('DM Upload timeout');
+                    this.dmIsUploading = false;
+                    const dmUploadProgress = document.getElementById('dmUploadProgress');
+                    if (dmUploadProgress) {
+                        dmUploadProgress.classList.add('hidden');
+                    }
+                    reject(new Error('Upload timeout'));
+                });
+                
+                xhr.timeout = 30000; // 30 second timeout
+                xhr.open('POST', '/upload');
+                xhr.send(formData);
+            });
+            
+        } catch (error) {
+            console.error('DM Upload error:', error);
+            this.dmIsUploading = false;
+            const dmUploadProgress = document.getElementById('dmUploadProgress');
+            if (dmUploadProgress) {
+                dmUploadProgress.classList.add('hidden');
+            }
+            throw error;
+        }
+    }
+    
+    updateDMUploadProgress(percentage, text) {
+        const dmUploadProgress = document.getElementById('dmUploadProgress');
+        if (!dmUploadProgress) return;
+        
+        const progressFill = dmUploadProgress.querySelector('.progress-fill');
+        const progressText = dmUploadProgress.querySelector('.progress-text');
+        
+        if (progressFill) {
+            progressFill.style.width = `${percentage * 100}%`;
+        }
+        if (progressText) {
+            progressText.textContent = text;
+        }
+    }
+    
+    closeDMModal() {
+        const dmModal = document.getElementById('dmModal');
+        if (dmModal) {
+            dmModal.remove();
+        }
+        this.currentDMUser = null;
+    }
+    
+    sendDMMessage(targetUsername, content, attachments = []) {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: 'dmMessage',
+                targetUsername: targetUsername,
+                content: content,
+                attachments: attachments
+            }));
+        }
+    }
+    
+    requestDMHistory(targetUsername) {
+        console.log('Requesting DM history for:', targetUsername); // Add debugging
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: 'getDMHistory',
+                targetUsername: targetUsername
+            }));
+        } else {
+            console.log('WebSocket not ready, clearing loading state'); // Add debugging
+            // If websocket is not ready, clear loading state and show empty conversation
+            const dmChatHistory = document.getElementById('dmChatHistory');
+            if (dmChatHistory) {
+                dmChatHistory.innerHTML = '<div class="dm-empty">Start a conversation! 💬</div>';
+            }
+        }
+    }
+    
+    handleDMMessage(data) {
+        // Generate conversation key for this DM
+        const conversationKey = this.getDMConversationKey(this.username, data.targetUsername);
+        
+        // Store the message in the conversation history
+        if (!this.dmConversations.has(conversationKey)) {
+            this.dmConversations.set(conversationKey, []);
+        }
+        
+        const conversation = this.dmConversations.get(conversationKey);
+        
+        // Only add if it's not already there (prevent duplicates)
+        if (!conversation.find(msg => msg.id === data.id)) {
+            conversation.push(data);
+        }
+        
+        // Check if this is for the current user and if DM modal is open
+        const isForCurrentUser = data.targetUsername === this.username || data.senderUsername === this.username;
+        const isDMModalOpen = this.currentDMUser && 
+            (this.currentDMUser.username === data.senderUsername || this.currentDMUser.username === data.targetUsername);
+        
+        if (isForCurrentUser) {
+            if (isDMModalOpen) {
+                // If DM modal is open for this conversation, display in modal
+                const currentConversationKey = this.getDMConversationKey(this.username, this.currentDMUser.username);
+                if (conversationKey === currentConversationKey) {
+                    this.displayDMMessage(data);
+                }
+            } else if (data.senderUsername !== this.username) {
+                // Check if user is in a DM modal with someone else
+                if (this.currentDMUser && this.currentDMUser.username !== data.senderUsername) {
+                    // Show toast notification above DM modal
+                    this.showDMToastNotification(data);
+                } else {
+                    // If DM modal is NOT open and this is an incoming message, show notification in global chat
+                    this.showDMNotificationInGlobalChat(data);
+                }
+            }
+        }
+        
+        // Play notification sound for incoming DMs (not from self)
+        if (data.senderUsername !== this.username) {
+            this.playNotificationSound();
+        }
+    }
+    
+    showDMToastNotification(dmData) {
+        // Remove any existing toast notifications
+        const existingToast = document.querySelector('.dm-toast-notification');
+        if (existingToast) {
+            existingToast.remove();
+        }
+        
+        // Create toast notification element
+        const toast = document.createElement('div');
+        toast.className = 'dm-toast-notification';
+        
+        // Create toast content
+        const toastContent = document.createElement('div');
+        toastContent.className = 'dm-toast-content';
+        
+        // Create sender info
+        const senderInfo = document.createElement('div');
+        senderInfo.className = 'dm-toast-sender';
+        senderInfo.textContent = `DM from ${dmData.senderUsername}`;
+        senderInfo.style.color = dmData.senderColor;
+        
+        // Create message preview (truncate if too long)
+        const messagePreview = document.createElement('div');
+        messagePreview.className = 'dm-toast-message';
+        const plainContent = dmData.content.replace(/<[^>]*>/g, ''); // Remove HTML tags
+        const truncatedContent = plainContent.length > 50 ? plainContent.substring(0, 50) + '...' : plainContent;
+        messagePreview.textContent = truncatedContent;
+        
+        // Create close button
+        const closeButton = document.createElement('button');
+        closeButton.className = 'dm-toast-close';
+        closeButton.textContent = '×';
+        closeButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toast.remove();
+        });
+        
+        // Add click handler to open DM with sender
+        toast.addEventListener('click', () => {
+            // Close current DM and open new one
+            this.openDMModal({ username: dmData.senderUsername, color: dmData.senderColor });
+            toast.remove();
+        });
+        
+        // Assemble toast
+        toastContent.appendChild(senderInfo);
+        toastContent.appendChild(messagePreview);
+        toast.appendChild(toastContent);
+        toast.appendChild(closeButton);
+        
+        // Add to DOM
+        document.body.appendChild(toast);
+        
+        // Trigger animation
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+        
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.remove();
+                    }
+                }, 300); // Wait for fade-out animation
+            }
+        }, 5000);
+    }
+    
+    showDMNotificationInGlobalChat(dmData) {
+        // Create a special notification message that looks like a chat message but is a DM notification
+        const notificationData = {
+            type: 'dmNotification', // Special type for DM notifications
+            id: `dm-notif-${dmData.id}`, // Unique ID for the notification
+            username: 'DM System', // System username
+            color: '#888', // Gray color for system
+            content: dmData.content,
+            timestamp: dmData.timestamp,
+            dmSender: dmData.senderUsername,
+            dmSenderColor: dmData.senderColor,
+            originalDMData: dmData // Store original DM data for opening modal
+        };
+        
+        // Display the notification in global chat
+        this.displayMessage(notificationData);
+    }
+    
+    handleDMHistory(data) {
+        console.log('Received DM history:', data); // Add debugging
+        
+        // Generate conversation key for this DM history
+        const conversationKey = this.getDMConversationKey(this.username, data.targetUsername);
+        
+        // Store the conversation history using the conversation key
+        this.dmConversations.set(conversationKey, data.messages);
+        
+        // If the DM modal is open for this user, display the history
+        if (this.currentDMUser && this.currentDMUser.username === data.targetUsername) {
+            this.displayDMHistory(data.messages);
+        }
+    }
+    
+    displayDMHistory(messages) {
+        console.log('Displaying DM history:', messages); // Add debugging
+        const dmChatHistory = document.getElementById('dmChatHistory');
+        if (!dmChatHistory) return;
+        
+        dmChatHistory.innerHTML = '';
+        
+        if (messages.length === 0) {
+            dmChatHistory.innerHTML = '<div class="dm-empty">Start a conversation! 💬</div>';
+            return;
+        }
+        
+        messages.forEach(message => {
+            this.displayDMMessage(message, false); // false = don't scroll yet
+        });
+        
+        // Scroll to bottom after loading all messages
+        this.scrollDMToBottom();
+    }
+    
+    displayDMMessage(data, shouldScroll = true) {
+        const dmChatHistory = document.getElementById('dmChatHistory');
+        if (!dmChatHistory) return;
+        
+        // Remove loading message if it exists
+        const loadingDiv = dmChatHistory.querySelector('.dm-loading');
+        if (loadingDiv) {
+            loadingDiv.remove();
+        }
+        
+        // Remove empty message if it exists
+        const emptyDiv = dmChatHistory.querySelector('.dm-empty');
+        if (emptyDiv) {
+            emptyDiv.remove();
+        }
+        
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'dm-message';
+        
+        // Check if this message is from the current user
+        const isOwnMessage = data.senderUsername === this.username;
+        if (isOwnMessage) {
+            messageDiv.classList.add('dm-message-own');
+        }
+        
+        const timestamp = new Date(data.timestamp).toLocaleTimeString([], { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+        
+        // Create message content
+        let messageContent = `
+            <div class="dm-message-header">
+                <span class="dm-message-sender" style="color: ${data.senderColor}">${data.senderUsername}</span>
+                <span class="dm-message-time">${timestamp}</span>
+            </div>
+        `;
+        
+        // Add text content if it exists
+        if (data.content && data.content.trim()) {
+            messageContent += `<div class="dm-message-content">${this.escapeHtml(data.content)}</div>`;
+        }
+        
+        // Add attachments if they exist
+        if (data.attachments && data.attachments.length > 0) {
+            messageContent += '<div class="dm-message-attachments">';
+            data.attachments.forEach(attachment => {
+                messageContent += this.createAttachmentElement(attachment);
+            });
+            messageContent += '</div>';
+        }
+        
+        messageDiv.innerHTML = messageContent;
+        
+        dmChatHistory.appendChild(messageDiv);
+        
+        if (shouldScroll) {
+            this.scrollDMToBottom();
+        }
+    }
+    
+    scrollDMToBottom() {
+        const dmChatHistory = document.getElementById('dmChatHistory');
+        if (dmChatHistory) {
+            dmChatHistory.scrollTop = dmChatHistory.scrollHeight;
+        }
+    }
+    
+    showDMError(message) {
+        // Show error in the DM modal if it's open
+        const dmChatHistory = document.getElementById('dmChatHistory');
+        if (dmChatHistory) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'dm-error';
+            errorDiv.textContent = `Error: ${message}`;
+            dmChatHistory.appendChild(errorDiv);
+            this.scrollDMToBottom();
+        } else {
+            // Show as system message if DM modal is not open
+            this.showSystemMessage(`DM Error: ${message}`);
+        }
+    }
+
+    openClickMeModal() {
+        this.clickMeModal.classList.remove('hidden');
+    }
+
+    closeClickMeModal() {
+        this.clickMeModal.classList.add('hidden');
     }
 }
 

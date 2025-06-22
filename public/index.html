@@ -25,6 +25,11 @@
 
     <!-- Chat Screen -->
     <div id="chatScreen" class="chat-screen hidden">
+        <!-- Click Me Button -->
+        <div class="click-me-container">
+            <button id="clickMeButton" class="click-me-button">Click Me!</button>
+        </div>
+        
         <!-- User List -->
         <div id="userList" class="user-list">
             <span id="onlineCount">0 online:</span>
@@ -192,6 +197,42 @@
     <div id="mentionDropdown" class="mention-dropdown hidden">
         <div class="mention-list" id="mentionList">
             <!-- Mention suggestions will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Click Me Modal -->
+    <div id="clickMeModal" class="click-me-modal hidden">
+        <div class="click-me-backdrop"></div>
+        <div class="click-me-container-modal">
+            <div class="click-me-header">
+                <h2>ok so like... about this website 💀</h2>
+                <button class="close-button" id="closeClickMe">×</button>
+            </div>
+            <div class="click-me-content">
+                <div class="click-me-section">
+                    <h3>sleep mode activated 😴</h3>
+                    <p>this thing goes to sleep after 15 mins cuz im too lazy to pay for a server plan lol. if people actually use this and it gets a lot of activity ill probably get a proper plan and maybe even a domain that doesnt look like garbage</p>
+                </div>
+                
+                <div class="click-me-section">
+                    <h3>ugly domain alert 🚨</h3>
+                    <p>domain literally looks ugly cuz its free (no shit sherlock) and im using render to host it (again, no shit) cuz im too lazy to setup cloudflare and all that fancy stuff</p>
+                </div>
+                
+                <div class="click-me-section">
+                    <h3>code is naked 👀</h3>
+                    <p>im too lazy to obfuscate the code so u can literally see the frontend and probably connect bots especially since this is raw websocket. like the source code is just sitting there saying "hey come exploit me"</p>
+                </div>
+                
+                <div class="click-me-section">
+                    <h3>security? what security 🔓</h3>
+                    <p>u can literally duplicate ur tab and itll think ur another user with the same name. thats how shit the security on this website is. like i didnt even try to prevent that lmao</p>
+                </div>
+                
+                <div class="click-me-footer">
+                    <p>anyway enjoy the chat i guess 🤷‍♂️</p>
+                </div>
+            </div>
         </div>
     </div>
 

@@ -173,6 +173,23 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.user-tag.clickable-username {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.user-tag.clickable-username:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.user-tag.clickable-username:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
+}
+
 .user-tag.bouncing {
     animation: bounce 0.8s ease-in-out infinite;
     box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
@@ -3005,5 +3022,921 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     
     .mention-username {
         font-size: 16px;
+    }
+}
+
+/* DM Modal */
+.dm-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.dm-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+}
+
+.dm-container {
+    position: relative;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    width: 90%;
+    max-width: 600px;
+    height: 80%;
+    max-height: 500px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    animation: dmSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes dmSlideIn {
+    0% {
+        transform: scale(0.9) translateY(20px);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
+
+.dm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 25px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dm-header h2 {
+    color: white;
+    font-weight: 300;
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.dm-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.dm-chat-history {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    min-height: 400px;
+    max-height: 500px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.dm-chat-history:empty::before {
+    content: "Start a conversation! 💬";
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+}
+
+.dm-empty {
+    color: rgba(255, 255, 255, 0.5);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    text-align: center;
+}
+
+.dm-input-container {
+    padding: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.dm-attach-button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    color: white;
+    font-size: 16px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    min-width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dm-attach-button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
+}
+
+.dm-chat-input {
+    flex: 1;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 25px;
+    color: white;
+    font-size: 16px;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.dm-chat-input:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
+}
+
+.dm-chat-input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Enhanced DM Header */
+.dm-header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.dm-username {
+    font-size: 1rem;
+    font-weight: 500;
+    opacity: 0.9;
+}
+
+/* DM Send Button */
+.dm-send-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 18px;
+    width: 44px;
+    height: 44px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.dm-send-button:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.dm-send-button:active {
+    transform: scale(0.95);
+}
+
+/* DM Chat History Updates */
+.dm-chat-history {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dm-loading {
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
+    text-align: center;
+    padding: 40px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+.dm-empty {
+    color: rgba(255, 255, 255, 0.6);
+    font-style: italic;
+    text-align: center;
+    padding: 40px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+/* DM Messages */
+.dm-message {
+    max-width: 70%;
+    padding: 12px 16px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: dmMessageSlideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    align-self: flex-start;
+    margin-left: 0;
+    margin-right: auto;
+}
+
+.dm-message:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateY(-2px);
+}
+
+.dm-message-own {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    align-self: flex-end;
+    margin-left: auto;
+    margin-right: 0;
+}
+
+.dm-message-own:hover {
+    background: linear-gradient(135deg, #7c8ef0 0%, #8557b8 100%);
+    transform: translateY(-2px);
+}
+
+.dm-message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+}
+
+.dm-message-own .dm-message-header {
+    flex-direction: row-reverse;
+    text-align: right;
+}
+
+.dm-message-sender {
+    font-weight: 600;
+    opacity: 0.9;
+}
+
+.dm-message-time {
+    opacity: 0.7;
+    font-size: 0.8rem;
+}
+
+.dm-message-content {
+    line-height: 1.4;
+    word-wrap: break-word;
+}
+
+.dm-error {
+    background: rgba(255, 69, 69, 0.2);
+    border: 1px solid rgba(255, 69, 69, 0.4);
+    color: #ffaaaa;
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    text-align: center;
+    animation: dmErrorShake 0.5s ease;
+}
+
+@keyframes dmMessageSlideIn {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes dmErrorShake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+/* Mobile responsiveness for DM modal */
+@media (max-width: 768px) {
+    .dm-container {
+        width: 95%;
+        height: 90%;
+        max-height: none;
+        border-radius: 15px;
+    }
+    
+    .dm-header {
+        padding: 15px 20px;
+    }
+    
+    .dm-header h2 {
+        font-size: 1.3rem;
+    }
+    
+    .dm-username {
+        font-size: 0.9rem;
+    }
+    
+    .dm-message-own {
+        margin-left: 20px;
+    }
+    
+    .dm-input-container {
+        padding: 15px;
+    }
+    
+    .dm-chat-input {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+}
+
+/* DM Notification Styles in Global Chat */
+.dm-notification-message {
+    background: rgba(138, 43, 226, 0.08) !important;
+    border-left: 3px solid rgba(138, 43, 226, 0.4);
+    margin: 8px 0;
+    padding: 12px 16px;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+    animation: dmNotificationSlideIn 0.3s ease-out;
+}
+
+.dm-notification-message:hover {
+    background: rgba(138, 43, 226, 0.12) !important;
+    border-left-color: rgba(138, 43, 226, 0.6);
+    transform: translateX(2px);
+    transition: all 0.2s ease;
+}
+
+.dm-notification-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dm-notification-reply-btn {
+    background: linear-gradient(135deg, #8a2be2, #9932cc);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(138, 43, 226, 0.3);
+}
+
+.dm-notification-reply-btn:hover {
+    background: linear-gradient(135deg, #9932cc, #ba55d3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(138, 43, 226, 0.4);
+}
+
+.dm-notification-reply-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(138, 43, 226, 0.3);
+}
+
+.dm-notification-from {
+    color: #888 !important;
+    font-style: italic;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.dm-notification-content {
+    font-style: italic;
+    font-size: 14px;
+    flex: 1;
+    min-width: 0;
+}
+
+/* DM Notification Hover Controls */
+.dm-notification-controls {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    background: rgba(138, 43, 226, 0.1);
+    border-radius: 6px;
+    padding: 4px;
+    backdrop-filter: blur(5px);
+}
+
+.dm-notification-reply-hover {
+    background: rgba(138, 43, 226, 0.8) !important;
+    color: white !important;
+    border: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dm-notification-reply-hover:hover {
+    background: rgba(138, 43, 226, 1) !important;
+    transform: scale(1.1);
+}
+
+@keyframes dmNotificationSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+        background: rgba(138, 43, 226, 0.2);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+        background: rgba(138, 43, 226, 0.08);
+    }
+}
+
+/* Mobile responsive for DM notifications */
+@media (max-width: 768px) {
+    .dm-notification-message {
+        padding: 10px 12px;
+        margin: 6px 0;
+    }
+    
+    .dm-notification-main {
+        gap: 6px;
+    }
+    
+    .dm-notification-reply-btn {
+        padding: 5px 10px;
+        font-size: 10px;
+    }
+    
+    .dm-notification-from,
+    .dm-notification-content {
+        font-size: 13px;
+    }
+}
+
+/* DM Toast Notification Styles */
+.dm-toast-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(139, 69, 19, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    padding: 16px;
+    min-width: 280px;
+    max-width: 350px;
+    z-index: 10000;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    transform: translateX(400px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.dm-toast-notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.dm-toast-notification:hover {
+    background: rgba(139, 69, 19, 0.98);
+    transform: translateX(-4px) scale(1.02);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.dm-toast-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.dm-toast-sender {
+    font-weight: 600;
+    font-size: 14px;
+    margin: 0;
+}
+
+.dm-toast-message {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.8);
+    margin: 0;
+    line-height: 1.3;
+}
+
+.dm-toast-close {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dm-toast-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+/* DM Message Attachments */
+.dm-message-attachments {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dm-message .attachment {
+    max-width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dm-message-own .attachment {
+    background: rgba(138, 43, 226, 0.1);
+    border: 1px solid rgba(138, 43, 226, 0.2);
+}
+
+.dm-message .attachment-image,
+.dm-message .attachment-gif,
+.dm-message .attachment-video {
+    max-width: 300px;
+    max-height: 200px;
+    border-radius: 8px;
+}
+
+.dm-message .attachment-file {
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.dm-message .attachment-file:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.dm-message-own .attachment-file {
+    background: rgba(138, 43, 226, 0.1);
+}
+
+.dm-message-own .attachment-file:hover {
+    background: rgba(138, 43, 226, 0.15);
+}
+
+.dm-message .file-icon {
+    font-size: 18px;
+    width: 24px;
+    text-align: center;
+}
+
+.dm-message .file-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.dm-message .file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    margin-bottom: 2px;
+    word-break: break-all;
+}
+
+.dm-message .file-size {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.dm-message .file-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.dm-message .file-actions button {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dm-message .file-actions button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* DM Audio/Video controls */
+.dm-message .attachment-audio audio,
+.dm-message .attachment-video video {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 6px;
+}
+
+/* DM Spoiler attachments */
+.dm-message .spoiler-wrapper {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.dm-message .spoiler-overlay {
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+}
+
+/* DM File upload progress */
+.dm-upload-progress {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    margin-top: 8px;
+    padding: 12px;
+    display: none;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dm-upload-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.dm-upload-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8A2BE2, #DA70D6);
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 3px;
+}
+
+.dm-upload-status {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    text-align: center;
+}
+
+/* Click Me Button Styles */
+.click-me-container {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+}
+
+.click-me-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 25px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    animation: clickMeFloat 3s ease-in-out infinite;
+}
+
+.click-me-button:hover {
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
+
+.click-me-button:active {
+    transform: translateY(0) scale(1.02);
+}
+
+@keyframes clickMeFloat {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+/* Click Me Modal Styles */
+.click-me-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.click-me-modal:not(.hidden) {
+    opacity: 1;
+    visibility: visible;
+}
+
+.click-me-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+}
+
+.click-me-container-modal {
+    position: relative;
+    background: rgba(26, 26, 46, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    transform: scale(0.9) translateY(20px);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.click-me-modal:not(.hidden) .click-me-container-modal {
+    transform: scale(1) translateY(0);
+}
+
+.click-me-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 32px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border-radius: 20px 20px 0 0;
+}
+
+.click-me-header h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.click-me-content {
+    padding: 32px;
+}
+
+.click-me-section {
+    margin-bottom: 28px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.click-me-section:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(102, 126, 234, 0.3);
+    transform: translateY(-2px);
+}
+
+.click-me-section h3 {
+    margin: 0 0 12px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #667eea;
+}
+
+.click-me-section p {
+    margin: 0;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 15px;
+}
+
+.click-me-footer {
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.click-me-footer p {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .click-me-container {
+        top: 15px;
+    }
+    
+    .click-me-button {
+        padding: 10px 20px;
+        font-size: 14px;
+    }
+    
+    .click-me-container-modal {
+        width: 95%;
+        border-radius: 16px;
+    }
+    
+    .click-me-header {
+        padding: 20px 24px;
+    }
+    
+    .click-me-header h2 {
+        font-size: 20px;
+    }
+    
+    .click-me-content {
+        padding: 24px;
+    }
+    
+    .click-me-section {
+        padding: 16px;
+        margin-bottom: 20px;
+    }
+    
+    .click-me-section h3 {
+        font-size: 16px;
+    }
+    
+    .click-me-section p {
+        font-size: 14px;
     }
 }
