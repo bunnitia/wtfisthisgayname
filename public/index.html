@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-container">
+            <h1>Join Chat</h1>
+            <div class="input-group">
+                <label for="username">Username (max 24 characters)</label>
+                <input type="text" id="username" maxlength="24" placeholder="Enter your username">
+            </div>
+            <div class="input-group">
+                <label for="colorPicker">Choose your color</label>
+                <input type="color" id="colorPicker" value="#ff6b6b">
+            </div>
+            <button id="joinButton" class="join-button">Join</button>
+        </div>
+    </div>
+
+    <!-- Chat Screen -->
+    <div id="chatScreen" class="chat-screen hidden">
+        <!-- User List -->
+        <div id="userList" class="user-list">
+            <span id="onlineCount">0 online:</span>
+            <div id="userContainer"></div>
+        </div>
+
+        <!-- Chat History -->
+        <div id="chatHistory" class="chat-history"></div>
+
+        <!-- Chat Input -->
+        <div class="chat-input-container">
+            <!-- File Upload (hidden) -->
+            <input type="file" id="fileInput" multiple accept="*/*" style="display: none;">
+            
+            <!-- Attachment Preview Area -->
+            <div id="attachmentPreview" class="attachment-preview hidden"></div>
+            
+            <!-- Upload Progress Bar -->
+            <div id="uploadProgress" class="upload-progress hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+                <span class="progress-text">Uploading...</span>
+            </div>
+            
+            <!-- Chat Input Row -->
+            <div class="chat-input-row">
+                <button id="attachButton" class="attach-button" title="Attach files or paste from clipboard">📎</button>
+                <button id="emojiButton" class="emoji-button" title="Insert emoji">😀</button>
+                <input type="text" id="chatInput" placeholder="Type a message, paste files, or press ENTER to send">
+                <div class="auto-scroll-toggle" id="autoScrollToggle" title="Toggle Auto Scroll">
+                    ⬇️
+                </div>
+                <div class="settings-icon" id="settingsIcon">⚙️</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="settings-modal hidden">
+        <div class="settings-backdrop"></div>
+        <div class="settings-container">
+            <div class="settings-header">
+                <h2>Settings</h2>
+                <button class="close-button" id="closeSettings">×</button>
+            </div>
+            <div class="settings-content">
+                <!-- Sidebar -->
+                <div class="settings-sidebar">
+                    <button class="sidebar-item active" data-category="account">Account</button>
+                    <button class="sidebar-item" data-category="appearance">Appearance</button>
+                    <button class="sidebar-item" data-category="notifications">Notifications</button>
+                    <button class="sidebar-item" data-category="safety">Safety</button>
+                </div>
+                
+                <!-- Content -->
+                <div class="settings-main">
+                    <!-- Account Section -->
+                    <div class="settings-section active" id="account-section">
+                        <h3>Account Settings</h3>
+                        <div class="setting-group">
+                            <label for="settingsUsername">Username</label>
+                            <input type="text" id="settingsUsername" maxlength="24" placeholder="Enter your username">
+                        </div>
+                        <div class="setting-group">
+                            <label for="settingsColor">Your Color</label>
+                            <input type="color" id="settingsColor" value="#ff6b6b">
+                        </div>
+                        <div class="setting-group">
+                            <label for="settingsWebsite">Website (Optional)</label>
+                            <input type="url" id="settingsWebsite" placeholder="https://example.com" maxlength="200">
+                            <div class="setting-description">
+                                When you set a website, other users can click on your username in chat messages to visit your link. This could be your portfolio, social media, or any website you want to share.
+                            </div>
+                        </div>
+                        <button id="updateAccountButton" class="update-button">Update & Save</button>
+                        <button id="logoutButton" class="logout-button">Logout</button>
+                    </div>
+                    
+                    <!-- Appearance Section -->
+                    <div class="settings-section" id="appearance-section">
+                        <h3>Appearance Settings</h3>
+                        <div class="setting-group">
+                            <label for="gradientColor1">Background Gradient Color 1</label>
+                            <input type="color" id="gradientColor1" value="#1a1a2e">
+                        </div>
+                        <div class="setting-group">
+                            <label for="gradientColor2">Background Gradient Color 2</label>
+                            <input type="color" id="gradientColor2" value="#0f3460">
+                        </div>
+                        <button id="resetAppearance" class="reset-button">Reset to Default</button>
+                    </div>
+                    
+                    <!-- Notifications Section -->
+                    <div class="settings-section" id="notifications-section">
+                        <h3>Notification Settings</h3>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Ping Sound Effect</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="pingSound" checked>
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                            <div class="setting-description">
+                                When enabled, you will hear a distinctive chime sound when someone mentions you with "@username" in their message. This helps you notice when you're being addressed in the chat.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Safety Section -->
+                    <div class="settings-section" id="safety-section">
+                        <h3>Safety Settings</h3>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Censor Swear Words</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="censorSwears">
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Spoiler Images by Default</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="spoilerImages" checked>
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Emoji Picker Modal -->
+    <div id="emojiPickerModal" class="emoji-picker-modal hidden">
+        <div class="emoji-picker-backdrop"></div>
+        <div class="emoji-picker-container">
+            <div class="emoji-picker-header">
+                <h3>Pick an Emoji</h3>
+                <button class="close-button" id="closeEmojiPicker">×</button>
+            </div>
+            <div class="emoji-picker-content">
+                <div class="emoji-categories">
+                    <button class="emoji-category active" data-category="smileys">😀</button>
+                    <button class="emoji-category" data-category="gestures">👍</button>
+                    <button class="emoji-category" data-category="animals">🐶</button>
+                    <button class="emoji-category" data-category="food">🍎</button>
+                    <button class="emoji-category" data-category="activities">⚽</button>
+                    <button class="emoji-category" data-category="objects">🔥</button>
+                    <button class="emoji-category" data-category="travel">🚗</button>
+                    <button class="emoji-category" data-category="weather">☀️</button>
+                </div>
+                <div class="emoji-grid" id="emojiGrid">
+                    <!-- Emojis will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mention Dropdown -->
+    <div id="mentionDropdown" class="mention-dropdown hidden">
+        <div class="mention-list" id="mentionList">
+            <!-- Mention suggestions will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html> 
