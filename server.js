@@ -210,6 +210,48 @@ function getOnlineUsers() {
     return users;
 }
 
+// Process join request (called after fingerprint verification)
+function processJoin(clientId, joinMessage) {
+    const client = clients.get(clientId);
+    if (!client) return;
+    
+    // Log the join event with IP
+    logEvent('JOIN', joinMessage.username, client.ip, `Color: ${joinMessage.color}`);
+    
+    // Update client info with join data
+    client.username = joinMessage.username;
+    client.color = joinMessage.color;
+    client.website = joinMessage.website || '';
+    client.isTyping = false;
+    
+    console.log(`👋 User ${joinMessage.username} joined. Sending ${chatHistory.length} messages from history`);
+    
+    // Send chat history to new client
+    try {
+        client.ws.send(JSON.stringify({
+            type: 'history',
+            messages: chatHistory
+        }));
+        console.log(`✅ History sent to ${joinMessage.username}`);
+    } catch (error) {
+        console.error(`❌ Failed to send history to ${joinMessage.username}:`, error);
+    }
+    
+    // Send updated user list to all clients
+    broadcast({
+        type: 'userList',
+        users: getOnlineUsers(),
+        count: clients.size
+    });
+    
+    // Notify others about new user
+    broadcast({
+        type: 'userJoined',
+        username: joinMessage.username,
+        color: joinMessage.color
+    }, client.ws);
+}
+
 wss.on('connection', (ws, req) => {
     const clientId = generateId();
     // Get client IP address
@@ -224,6 +266,16 @@ wss.on('connection', (ws, req) => {
     
     // Log the initial connection
     logEvent('CONNECTION', 'connecting...', clientIP, `Client ID: ${clientId}`);
+    
+    // Store temporary client info immediately for fingerprint checking
+    const tempClientInfo = {
+        id: clientId,
+        ip: clientIP,
+        ws: ws,
+        fingerprintVerified: false,
+        joinRequested: false
+    };
+    clients.set(clientId, tempClientInfo);
     
     // Request device fingerprint from client
     ws.send(JSON.stringify({
@@ -256,68 +308,52 @@ wss.on('connection', (ws, req) => {
                             return;
                         }
                         
-                        // Store fingerprint with client
+                        // Store fingerprint with client and mark as verified
                         fingerprintClient.fingerprint = fingerprint;
+                        fingerprintClient.fingerprintVerified = true;
                         
                         logEvent('FINGERPRINT_TRACKED', 'connecting...', clientIP, `Fingerprint stored: ${fingerprint}`);
+                        
+                        // If they already tried to join, process it now
+                        if (fingerprintClient.joinRequested && fingerprintClient.pendingJoinData) {
+                            const joinData = fingerprintClient.pendingJoinData;
+                            delete fingerprintClient.pendingJoinData;
+                            delete fingerprintClient.joinRequested;
+                            
+                            // Process the join now that fingerprint is verified
+                            processJoin(clientId, joinData);
+                        }
                     }
                     break;
                     
                 case 'join':
-                    // Log the join event with IP
-                    logEvent('JOIN', message.username, clientIP, `Color: ${message.color}`);
-                    
-                    // Store client info with IP
-                    const clientInfo = {
-                        id: clientId,
-                        username: message.username,
-                        color: message.color,
-                        website: message.website || '',
-                        ip: clientIP,
-                        isTyping: false,
-                        ws: ws
-                    };
-                    clients.set(clientId, clientInfo);
-                    
-                    console.log(`👋 User ${message.username} joined. Sending ${chatHistory.length} messages from history`);
-                    
-                    // Send chat history to new client
-                    try {
-                        ws.send(JSON.stringify({
-                            type: 'history',
-                            messages: chatHistory
-                        }));
-                        console.log(`✅ History sent to ${message.username}`);
-                    } catch (error) {
-                        console.error(`❌ Failed to send history to ${message.username}:`, error);
+                    const joinClient = clients.get(clientId);
+                    if (joinClient) {
+                        // Check if fingerprint has been verified
+                        if (!joinClient.fingerprintVerified) {
+                            // Store join request for later processing
+                            joinClient.joinRequested = true;
+                            joinClient.pendingJoinData = message;
+                            logEvent('JOIN_DEFERRED', message.username, joinClient.ip, 'Waiting for fingerprint verification');
+                            return;
+                        }
+                        
+                        // Process join immediately if fingerprint is already verified
+                        processJoin(clientId, message);
                     }
-                    
-                    // Send updated user list to all clients
-                    broadcast({
-                        type: 'userList',
-                        users: getOnlineUsers(),
-                        count: clients.size
-                    });
-                    
-                    // Notify others about new user
-                    broadcast({
-                        type: 'userJoined',
-                        username: message.username,
-                        color: message.color
-                    }, ws);
                     break;
                     
                 case 'message':
-                    const client = clients.get(clientId);
-                    if (client) {
+                    const messageClient = clients.get(clientId);
+                    if (messageClient) {
                         // Check if message is a ban/unban command
                         if (message.content.startsWith('/pb ') || message.content.startsWith('/unpb ') || 
                             message.content.startsWith('/pbf ') || message.content.startsWith('/unpbf ')) {
-                            const commandResult = processCommand(message.content, client);
+                            const commandResult = processCommand(message.content, messageClient);
                             if (commandResult) {
                                 // Send command result back to the user
-                                if (client.ws && client.ws.readyState === WebSocket.OPEN) {
-                                    client.ws.send(JSON.stringify({
+                                if (messageClient.ws && messageClient.ws.readyState === WebSocket.OPEN) {
+                                    messageClient.ws.send(JSON.stringify({
                                         type: 'systemMessage',
                                         message: commandResult.message
                                     }));
@@ -328,9 +364,9 @@ wss.on('connection', (ws, req) => {
                         }
                         
                         // Log the message event with IP
-                        logEvent('MESSAGE', client.username, client.ip, `Content length: ${message.content?.length || 0} chars, Attachments: ${message.attachments?.length || 0}`);
+                        logEvent('MESSAGE', messageClient.username, messageClient.ip, `Content length: ${message.content?.length || 0} chars, Attachments: ${message.attachments?.length || 0}`);
                         
-                        console.log('Received message from', client.username);
+                        console.log('Received message from', messageClient.username);
                         console.log('Message content:', message.content);
                         console.log('Message attachments:', message.attachments);
                         console.log('Reply data:', message.replyTo);
@@ -338,8 +374,8 @@ wss.on('connection', (ws, req) => {
                         const chatMessage = {
                             type: 'message',
                             id: generateId(),
-                            username: client.username,
-                            color: client.color,
+                            username: messageClient.username,
+                            color: messageClient.color,
                             content: message.content,
                             timestamp: Date.now()
                         };
