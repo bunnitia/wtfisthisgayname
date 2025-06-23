@@ -843,37 +843,31 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
 
 /* Message Attachments */
 .message-attachments {
-    margin-top: 8px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 12px;
-    max-width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
 }
 
-/* For smaller screens, adjust grid to single column */
 @media (max-width: 768px) {
     .message-attachments {
-        grid-template-columns: 1fr;
-        gap: 8px;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 6px;
     }
 }
 
-/* Ensure image and video attachments work well in grid */
 .message-image-attachment,
 .message-gif-attachment {
     margin-top: 0;
     max-width: 100%;
     width: 100%;
     height: auto;
-    aspect-ratio: 16/9;
-    object-fit: cover;
 }
 
 .message-image-attachment img,
 .message-gif-attachment img {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    height: auto;
 }
 
 .message-video-attachment {
@@ -3712,17 +3706,15 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
 
 /* DM Message Attachments */
 .dm-message-attachments {
-    margin-top: 8px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 10px;
-    max-width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
 }
 
-/* For smaller screens, adjust DM grid to single column */
 @media (max-width: 768px) {
     .dm-message-attachments {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 6px;
     }
 }
@@ -3748,7 +3740,7 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     max-height: 200px;
     border-radius: 8px;
     width: 100%;
-    object-fit: cover;
+    height: auto;
 }
 
 .dm-message .attachment-file {
