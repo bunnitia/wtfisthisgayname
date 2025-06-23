@@ -125,8 +125,25 @@ app.get('*', (req, res) => {
 const clients = new Map();
 const chatHistory = [];
 const dmHistory = new Map(); // Store DM conversations by IP pairs
+const bannedIPs = new Set(); // Store banned IP addresses
 const MAX_MESSAGES = 128;
 const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
+
+// Helper function to get real IP address (handles proxies/load balancers)
+function getRealIP(req) {
+    return req.headers['cf-connecting-ip'] || // Cloudflare
+           req.headers['x-real-ip'] || // Nginx
+           req.headers['x-forwarded-for']?.split(',')[0] || // Standard proxy header
+           req.socket.remoteAddress || 
+           req.connection.remoteAddress || 
+           'unknown';
+}
+
+// Helper function to format IP logging with timestamp
+function logEvent(eventType, username, ip, details = '') {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] 🌐 ${eventType} | IP: ${ip} | User: ${username || 'unknown'} ${details ? '| ' + details : ''}`);
+}
 
 // Generate unique ID for each client
 function generateId() {
@@ -197,7 +214,17 @@ function getOnlineUsers() {
 wss.on('connection', (ws, req) => {
     const clientId = generateId();
     // Get client IP address
-    const clientIP = req.socket.remoteAddress || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+    const clientIP = getRealIP(req);
+    
+    // Check if IP is banned before allowing connection
+    if (isIPBanned(clientIP)) {
+        logEvent('BANNED_IP_ATTEMPT', 'unknown', clientIP, 'Connection rejected - IP is banned');
+        ws.close(1008, 'Your IP address has been banned from this server');
+        return;
+    }
+    
+    // Log the initial connection
+    logEvent('CONNECTION', 'connecting...', clientIP, `Client ID: ${clientId}`);
     
     ws.on('message', (data) => {
         try {
@@ -205,6 +232,9 @@ wss.on('connection', (ws, req) => {
             
             switch (message.type) {
                 case 'join':
+                    // Log the join event with IP
+                    logEvent('JOIN', message.username, clientIP, `Color: ${message.color}`);
+                    
                     // Store client info with IP
                     const clientInfo = {
                         id: clientId,
@@ -248,6 +278,25 @@ wss.on('connection', (ws, req) => {
                 case 'message':
                     const client = clients.get(clientId);
                     if (client) {
+                        // Check if message is a ban/unban command
+                        if (message.content.startsWith('/pb ') || message.content.startsWith('/unpb ')) {
+                            const commandResult = processCommand(message.content, client);
+                            if (commandResult) {
+                                // Send command result back to the user
+                                if (client.ws && client.ws.readyState === WebSocket.OPEN) {
+                                    client.ws.send(JSON.stringify({
+                                        type: 'systemMessage',
+                                        message: commandResult.message
+                                    }));
+                                }
+                                // Don't broadcast the command as a regular message
+                                break;
+                            }
+                        }
+                        
+                        // Log the message event with IP
+                        logEvent('MESSAGE', client.username, client.ip, `Content length: ${message.content?.length || 0} chars, Attachments: ${message.attachments?.length || 0}`);
+                        
                         console.log('Received message from', client.username);
                         console.log('Message content:', message.content);
                         console.log('Message attachments:', message.attachments);
@@ -300,6 +349,9 @@ wss.on('connection', (ws, req) => {
                         }
                         
                         if (targetClient) {
+                            // Log the DM event with both IPs
+                            logEvent('DM_MESSAGE', dmSender.username, dmSender.ip, `To: ${targetClient.username} (${targetClient.ip}), Content length: ${message.content?.length || 0} chars`);
+                            
                             console.log(`DM from ${dmSender.username} (${dmSender.ip}) to ${targetClient.username} (${targetClient.ip})`);
                             
                             const dmMessage = {
@@ -328,6 +380,9 @@ wss.on('connection', (ws, req) => {
                                 targetClient.ws.send(JSON.stringify(dmMessage));
                             }
                         } else {
+                            // Log failed DM attempt
+                            logEvent('DM_FAILED', dmSender.username, dmSender.ip, `Target not found: ${message.targetUsername}`);
+                            
                             // Target user not found/online
                             if (dmSender.ws && dmSender.ws.readyState === WebSocket.OPEN) {
                                 dmSender.ws.send(JSON.stringify({
@@ -342,6 +397,9 @@ wss.on('connection', (ws, req) => {
                 case 'getDMHistory':
                     const historyClient = clients.get(clientId);
                     if (historyClient && message.targetUsername) {
+                        // Log the DM history request with IP
+                        logEvent('DM_HISTORY_REQUEST', historyClient.username, historyClient.ip, `Requesting history with: ${message.targetUsername}`);
+                        
                         console.log(`📞 DM History request from ${historyClient.username} for ${message.targetUsername}`);
                         
                         // Find the target user by username to get their IP
@@ -382,6 +440,11 @@ wss.on('connection', (ws, req) => {
                 case 'typing':
                     const typingClient = clients.get(clientId);
                     if (typingClient) {
+                        // Log typing events (only when starting to type to reduce spam)
+                        if (message.isTyping) {
+                            logEvent('TYPING_START', typingClient.username, typingClient.ip);
+                        }
+                        
                         // Update typing status
                         typingClient.isTyping = message.isTyping;
                         
@@ -397,6 +460,9 @@ wss.on('connection', (ws, req) => {
                 case 'updateUser':
                     const updateClient = clients.get(clientId);
                     if (updateClient) {
+                        // Log the user update with IP
+                        logEvent('USER_UPDATE', updateClient.username, updateClient.ip, `New username: ${message.username}, New color: ${message.color}`);
+                        
                         // Update stored client info
                         updateClient.username = message.username;
                         updateClient.color = message.color;
@@ -423,6 +489,7 @@ wss.on('connection', (ws, req) => {
                 case 'cursor':
                     const cursorClient = clients.get(clientId);
                     if (cursorClient) {
+                        // Don't log cursor movements as they're too frequent
                         broadcast({
                             type: 'cursor',
                             userId: clientId,
@@ -439,6 +506,9 @@ wss.on('connection', (ws, req) => {
                     console.log('🔧 Server received editMessage:', message);
                     const editClient = clients.get(clientId);
                     if (editClient) {
+                        // Log the edit attempt with IP
+                        logEvent('EDIT_MESSAGE', editClient.username, editClient.ip, `Message ID: ${message.messageId}, New content length: ${message.newContent?.length || 0} chars`);
+                        
                         console.log('🔧 Edit client found:', editClient.username);
                         // Find the message in chat history
                         const messageIndex = chatHistory.findIndex(msg => msg.id === message.messageId);
@@ -455,6 +525,7 @@ wss.on('connection', (ws, req) => {
                                 chatHistory[messageIndex].editedAt = Date.now();
                                 
                                 console.log('🔧 Message updated, broadcasting edit');
+                                logEvent('EDIT_SUCCESS', editClient.username, editClient.ip, `Message ID: ${message.messageId} edited successfully`);
                                 
                                 // Broadcast the edit to all clients
                                 broadcast({
@@ -465,9 +536,11 @@ wss.on('connection', (ws, req) => {
                                 });
                             } else {
                                 console.log('🔧 Username mismatch, edit rejected');
+                                logEvent('EDIT_DENIED', editClient.username, editClient.ip, `Attempted to edit message from: ${originalMessage.username}`);
                             }
                         } else {
                             console.log('🔧 Message not found in history');
+                            logEvent('EDIT_FAILED', editClient.username, editClient.ip, `Message ID not found: ${message.messageId}`);
                         }
                     } else {
                         console.log('🔧 Edit client not found');
@@ -478,6 +551,9 @@ wss.on('connection', (ws, req) => {
                     console.log('🔧 Server received deleteMessage:', message);
                     const deleteClient = clients.get(clientId);
                     if (deleteClient) {
+                        // Log the delete attempt with IP
+                        logEvent('DELETE_MESSAGE', deleteClient.username, deleteClient.ip, `Message ID: ${message.messageId}`);
+                        
                         console.log('🔧 Delete client found:', deleteClient.username);
                         // Find the message in chat history
                         const messageIndex = chatHistory.findIndex(msg => msg.id === message.messageId);
@@ -494,6 +570,7 @@ wss.on('connection', (ws, req) => {
                                 chatHistory[messageIndex].deletedAt = Date.now();
                                 
                                 console.log('🔧 Message deleted, broadcasting deletion');
+                                logEvent('DELETE_SUCCESS', deleteClient.username, deleteClient.ip, `Message ID: ${message.messageId} deleted successfully`);
                                 
                                 // Broadcast the deletion to all clients
                                 broadcast({
@@ -503,9 +580,11 @@ wss.on('connection', (ws, req) => {
                                 });
                             } else {
                                 console.log('🔧 Username mismatch, delete rejected');
+                                logEvent('DELETE_DENIED', deleteClient.username, deleteClient.ip, `Attempted to delete message from: ${originalMessage.username}`);
                             }
                         } else {
                             console.log('🔧 Message not found in history');
+                            logEvent('DELETE_FAILED', deleteClient.username, deleteClient.ip, `Message ID not found: ${message.messageId}`);
                         }
                     } else {
                         console.log('🔧 Delete client not found');
@@ -513,6 +592,12 @@ wss.on('connection', (ws, req) => {
                     break;
                     
                 case 'systemMessage':
+                    const systemClient = clients.get(clientId);
+                    if (systemClient) {
+                        // Log system message with IP (could be admin command)
+                        logEvent('SYSTEM_MESSAGE', systemClient.username, systemClient.ip, `Message: ${message.message}`);
+                    }
+                    
                     // Broadcast system message to all clients
                     broadcast({
                         type: 'systemMessage',
@@ -521,6 +606,12 @@ wss.on('connection', (ws, req) => {
                     break;
                     
                 case 'fakeMessage':
+                    const fakeMessageClient = clients.get(clientId);
+                    if (fakeMessageClient) {
+                        // Log fake message creation with IP (could be admin/mod command)
+                        logEvent('FAKE_MESSAGE', fakeMessageClient.username, fakeMessageClient.ip, `Fake user: ${message.username}, Message: ${message.message}`);
+                    }
+                    
                     // Create a fake message from specified user
                     // First, try to find if this fake user already exists to get their color
                     let fakeUserColor = '#ff6b6b'; // Default color
@@ -551,6 +642,12 @@ wss.on('connection', (ws, req) => {
                     break;
                     
                 case 'fakeConnect':
+                    const fakeConnectClient = clients.get(clientId);
+                    if (fakeConnectClient) {
+                        // Log fake user connection with IP
+                        logEvent('FAKE_CONNECT', fakeConnectClient.username, fakeConnectClient.ip, `Creating fake user: ${message.username} (${message.color})`);
+                    }
+                    
                     // Create a fake user connection
                     const fakeUserId = generateId();
                     const fakeUserInfo = {
@@ -581,6 +678,12 @@ wss.on('connection', (ws, req) => {
                     break;
                     
                 case 'fakeDisconnect':
+                    const fakeDisconnectClient = clients.get(clientId);
+                    if (fakeDisconnectClient) {
+                        // Log fake user disconnection with IP
+                        logEvent('FAKE_DISCONNECT', fakeDisconnectClient.username, fakeDisconnectClient.ip, `Removing fake user: ${message.username}`);
+                    }
+                    
                     // Find and remove fake user by username
                     let fakeUserToRemove = null;
                     let fakeUserIdToRemove = null;
@@ -610,8 +713,20 @@ wss.on('connection', (ws, req) => {
                         });
                     }
                     break;
+                    
+                default:
+                    const unknownEventClient = clients.get(clientId);
+                    if (unknownEventClient) {
+                        // Log unknown events with IP
+                        logEvent('UNKNOWN_EVENT', unknownEventClient.username, unknownEventClient.ip, `Event type: ${message.type}`);
+                    }
+                    break;
             }
         } catch (error) {
+            const errorClient = clients.get(clientId);
+            if (errorClient) {
+                logEvent('PARSE_ERROR', errorClient.username, errorClient.ip, `Error: ${error.message}`);
+            }
             console.error('Error parsing message:', error);
         }
     });
@@ -619,6 +734,9 @@ wss.on('connection', (ws, req) => {
     ws.on('close', () => {
         const client = clients.get(clientId);
         if (client) {
+            // Log the disconnection with IP
+            logEvent('DISCONNECT', client.username, client.ip, `Client ID: ${clientId}`);
+            
             // Notify others about user leaving
             broadcast({
                 type: 'userLeft',
@@ -636,6 +754,127 @@ wss.on('connection', (ws, req) => {
         }
     });
 });
+
+// IP Ban management functions
+function banIP(ip, bannedBy) {
+    bannedIPs.add(ip);
+    logEvent('IP_BANNED', bannedBy, 'SERVER', `Banned IP: ${ip}`);
+    
+    // Disconnect any currently connected clients with this IP
+    const clientsToDisconnect = [];
+    clients.forEach((client, clientId) => {
+        if (client.ip === ip) {
+            clientsToDisconnect.push({ clientId, client });
+        }
+    });
+    
+    clientsToDisconnect.forEach(({ clientId, client }) => {
+        logEvent('IP_BAN_DISCONNECT', client.username, client.ip, 'Disconnected due to IP ban');
+        if (client.ws && client.ws.readyState === WebSocket.OPEN) {
+            client.ws.close(1008, 'IP banned');
+        }
+        clients.delete(clientId);
+    });
+    
+    // Update user list if anyone was disconnected
+    if (clientsToDisconnect.length > 0) {
+        broadcast({
+            type: 'userList',
+            users: getOnlineUsers(),
+            count: clients.size
+        });
+    }
+}
+
+function unbanIP(ip, unbannedBy) {
+    const wasBanned = bannedIPs.has(ip);
+    bannedIPs.delete(ip);
+    
+    if (wasBanned) {
+        logEvent('IP_UNBANNED', unbannedBy, 'SERVER', `Unbanned IP: ${ip}`);
+        return true;
+    }
+    return false;
+}
+
+function isIPBanned(ip) {
+    return bannedIPs.has(ip);
+}
+
+// Process chat commands (for /pb and /unpb)
+function processCommand(content, client) {
+    const parts = content.trim().split(' ');
+    const command = parts[0].toLowerCase();
+    
+    switch (command) {
+        case '/pb':
+            if (parts.length < 2) {
+                return { 
+                    type: 'error', 
+                    message: 'Usage: /pb <ip_address>' 
+                };
+            }
+            
+            const ipToBan = parts[1];
+            // Basic IP validation
+            if (!/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ipToBan) && ipToBan !== 'unknown') {
+                return { 
+                    type: 'error', 
+                    message: 'Invalid IP address format' 
+                };
+            }
+            
+            if (isIPBanned(ipToBan)) {
+                return { 
+                    type: 'error', 
+                    message: `IP ${ipToBan} is already banned` 
+                };
+            }
+            
+            banIP(ipToBan, client.username);
+            logEvent('BAN_COMMAND', client.username, client.ip, `Banned IP: ${ipToBan}`);
+            
+            return { 
+                type: 'success', 
+                message: `Successfully banned IP: ${ipToBan}` 
+            };
+            
+        case '/unpb':
+            if (parts.length < 2) {
+                return { 
+                    type: 'error', 
+                    message: 'Usage: /unpb <ip_address>' 
+                };
+            }
+            
+            const ipToUnban = parts[1];
+            // Basic IP validation
+            if (!/^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(ipToUnban) && ipToUnban !== 'unknown') {
+                return { 
+                    type: 'error', 
+                    message: 'Invalid IP address format' 
+                };
+            }
+            
+            const wasUnbanned = unbanIP(ipToUnban, client.username);
+            logEvent('UNBAN_COMMAND', client.username, client.ip, `Unbanned IP: ${ipToUnban}`);
+            
+            if (wasUnbanned) {
+                return { 
+                    type: 'success', 
+                    message: `Successfully unbanned IP: ${ipToUnban}` 
+                };
+            } else {
+                return { 
+                    type: 'error', 
+                    message: `IP ${ipToUnban} was not banned` 
+                };
+            }
+            
+        default:
+            return null; // Not a recognized command
+    }
+}
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {

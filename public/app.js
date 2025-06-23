@@ -3782,6 +3782,12 @@ class ChatApp {
                 case '/unspoilerimagesforeveryone':
                     this.handleUnspoilerImagesCommand();
                     break;
+                case '/pb':
+                    this.handleBanCommand(command);
+                    break;
+                case '/unpb':
+                    this.handleUnbanCommand(command);
+                    break;
                 default:
                     this.showSystemMessage(`Unknown command: ${cmd}`);
             }
@@ -3855,6 +3861,26 @@ class ChatApp {
         this.socket.send(JSON.stringify({
             type: 'fakeDisconnect',
             username: username
+        }));
+    }
+
+    handleBanCommand(command) {
+        // For /pb command, just send the raw message to the server
+        // The server will process the command and send back a system message
+        this.socket.send(JSON.stringify({
+            type: 'message',
+            content: command,
+            attachments: []
+        }));
+    }
+
+    handleUnbanCommand(command) {
+        // For /unpb command, just send the raw message to the server
+        // The server will process the command and send back a system message
+        this.socket.send(JSON.stringify({
+            type: 'message',
+            content: command,
+            attachments: []
         }));
     }
 
