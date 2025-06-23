@@ -3786,6 +3786,16 @@ class ChatApp {
                 case '/unspoilerimagesforeveryone':
                     this.handleUnspoilerImagesCommand();
                     break;
+                case '/pb':
+                case '/unpb':
+                case '/pbf':
+                case '/unpbf':
+                    // Send ban/unban commands directly to server as regular messages
+                    this.socket.send(JSON.stringify({
+                        type: 'message',
+                        content: command
+                    }));
+                    break;
                 default:
                     this.showSystemMessage(`Unknown command: ${cmd}`);
             }
