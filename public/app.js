@@ -1171,6 +1171,10 @@ class ChatApp {
     
     handleMessage(data) {
         switch (data.type) {
+            case 'requestFingerprint':
+                // Server is requesting our device fingerprint
+                this.sendDeviceFingerprint();
+                break;
             case 'history':
                 this.loadChatHistory(data.messages);
                 break;
@@ -3782,12 +3786,6 @@ class ChatApp {
                 case '/unspoilerimagesforeveryone':
                     this.handleUnspoilerImagesCommand();
                     break;
-                case '/pb':
-                    this.handleBanCommand(command);
-                    break;
-                case '/unpb':
-                    this.handleUnbanCommand(command);
-                    break;
                 default:
                     this.showSystemMessage(`Unknown command: ${cmd}`);
             }
@@ -3861,26 +3859,6 @@ class ChatApp {
         this.socket.send(JSON.stringify({
             type: 'fakeDisconnect',
             username: username
-        }));
-    }
-
-    handleBanCommand(command) {
-        // For /pb command, just send the raw message to the server
-        // The server will process the command and send back a system message
-        this.socket.send(JSON.stringify({
-            type: 'message',
-            content: command,
-            attachments: []
-        }));
-    }
-
-    handleUnbanCommand(command) {
-        // For /unpb command, just send the raw message to the server
-        // The server will process the command and send back a system message
-        this.socket.send(JSON.stringify({
-            type: 'message',
-            content: command,
-            attachments: []
         }));
     }
 
@@ -5555,10 +5533,151 @@ class ChatApp {
     }
 
     handleServerClearChatCommand() {
-        // Send server clear chat command so it clears for everyone
+        // Send server clear chat command to server
         this.socket.send(JSON.stringify({
             type: 'serverClearChat'
         }));
+    }
+
+    // Device fingerprinting for ban evasion detection
+    async generateDeviceFingerprint() {
+        const fingerprint = [];
+        
+        try {
+            // Screen information
+            fingerprint.push(`screen:${screen.width}x${screen.height}x${screen.colorDepth}`);
+            fingerprint.push(`avail:${screen.availWidth}x${screen.availHeight}`);
+            
+            // Timezone
+            fingerprint.push(`tz:${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+            fingerprint.push(`tzOffset:${new Date().getTimezoneOffset()}`);
+            
+            // Language and locale
+            fingerprint.push(`lang:${navigator.language}`);
+            fingerprint.push(`langs:${navigator.languages ? navigator.languages.join(',') : 'none'}`);
+            
+            // User agent (simplified)
+            const ua = navigator.userAgent;
+            fingerprint.push(`ua:${btoa(ua).slice(0, 20)}`); // Base64 encoded and truncated for privacy
+            
+            // Platform
+            fingerprint.push(`platform:${navigator.platform}`);
+            
+            // Hardware concurrency (CPU cores)
+            if (navigator.hardwareConcurrency) {
+                fingerprint.push(`cores:${navigator.hardwareConcurrency}`);
+            }
+            
+            // Memory (if available)
+            if (navigator.deviceMemory) {
+                fingerprint.push(`memory:${navigator.deviceMemory}`);
+            }
+            
+            // WebGL vendor and renderer (for GPU fingerprinting)
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+                        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                        fingerprint.push(`gpu:${btoa(vendor + renderer).slice(0, 15)}`);
+                    }
+                }
+            } catch (e) {
+                fingerprint.push('gpu:unavailable');
+            }
+            
+            // Canvas fingerprinting (reduced for privacy)
+            try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                ctx.textBaseline = 'top';
+                ctx.font = '14px Arial';
+                ctx.fillText('🌐🔒', 2, 2);
+                const canvasData = canvas.toDataURL();
+                const hash = this.simpleHash(canvasData);
+                fingerprint.push(`canvas:${hash}`);
+            } catch (e) {
+                fingerprint.push('canvas:unavailable');
+            }
+            
+            // Audio context fingerprinting (basic)
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const analyser = audioContext.createAnalyser();
+                const gain = audioContext.createGain();
+                
+                oscillator.connect(analyser);
+                analyser.connect(gain);
+                gain.connect(audioContext.destination);
+                
+                oscillator.frequency.value = 1000;
+                const audioHash = this.simpleHash(audioContext.sampleRate + ':' + audioContext.baseLatency + ':' + analyser.fftSize);
+                fingerprint.push(`audio:${audioHash}`);
+                
+                audioContext.close();
+            } catch (e) {
+                fingerprint.push('audio:unavailable');
+            }
+            
+            // Local storage test (for storage fingerprinting)
+            try {
+                const testKey = 'fp_test_' + Date.now();
+                localStorage.setItem(testKey, 'test');
+                const canStore = localStorage.getItem(testKey) === 'test';
+                localStorage.removeItem(testKey);
+                fingerprint.push(`storage:${canStore}`);
+            } catch (e) {
+                fingerprint.push('storage:false');
+            }
+            
+        } catch (error) {
+            console.error('Error generating fingerprint:', error);
+            fingerprint.push('error:' + error.message.slice(0, 10));
+        }
+        
+        // Combine all fingerprint components and hash
+        const combined = fingerprint.join('|');
+        const finalHash = this.simpleHash(combined);
+        
+        console.log('🔍 Device fingerprint generated:', finalHash);
+        return finalHash;
+    }
+    
+    // Simple hash function for fingerprinting
+    simpleHash(str) {
+        let hash = 0;
+        if (str.length === 0) return hash.toString(36);
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        return Math.abs(hash).toString(36);
+    }
+    
+    // Send device fingerprint to server
+    async sendDeviceFingerprint() {
+        try {
+            const fingerprint = await this.generateDeviceFingerprint();
+            
+            this.socket.send(JSON.stringify({
+                type: 'fingerprint',
+                fingerprint: fingerprint
+            }));
+            
+            console.log('🔒 Device fingerprint sent to server');
+        } catch (error) {
+            console.error('Failed to send fingerprint:', error);
+            // Send a fallback fingerprint if generation fails
+            this.socket.send(JSON.stringify({
+                type: 'fingerprint',
+                fingerprint: 'fallback_' + Date.now()
+            }));
+        }
     }
 }
 

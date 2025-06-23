@@ -126,6 +126,9 @@ const clients = new Map();
 const chatHistory = [];
 const dmHistory = new Map(); // Store DM conversations by IP pairs
 const bannedIPs = new Set(); // Store banned IP addresses
+const bannedFingerprints = new Set(); // Store banned device fingerprints
+const fingerprintToIPs = new Map(); // Track which IPs a fingerprint has used
+const ipToFingerprint = new Map(); // Track which fingerprint an IP is using
 const MAX_MESSAGES = 128;
 const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
 
@@ -182,20 +185,16 @@ function addDMMessage(ip1, ip2, message) {
 // Broadcast message to all connected clients
 function broadcast(message, excludeClient = null) {
     const messageString = JSON.stringify(message);
-    console.log(`📢 Broadcasting ${message.type} to ${clients.size} clients`);
     
     clients.forEach((client, clientId) => {
         if (client.ws && client.ws !== excludeClient && client.ws.readyState === WebSocket.OPEN) {
             try {
                 client.ws.send(messageString);
-                console.log(`✅ Sent ${message.type} to ${client.username}`);
             } catch (error) {
                 console.error(`❌ Error sending message to ${client.username}:`, error);
                 // Remove broken client connection
                 clients.delete(clientId);
             }
-        } else {
-            console.log(`⚠️  Skipping ${client.username} - ws state: ${client.ws ? client.ws.readyState : 'no ws'}`);
         }
     });
 }
@@ -226,11 +225,44 @@ wss.on('connection', (ws, req) => {
     // Log the initial connection
     logEvent('CONNECTION', 'connecting...', clientIP, `Client ID: ${clientId}`);
     
+    // Request device fingerprint from client
+    ws.send(JSON.stringify({
+        type: 'requestFingerprint'
+    }));
+    
     ws.on('message', (data) => {
         try {
             const message = JSON.parse(data);
             
             switch (message.type) {
+                case 'fingerprint':
+                    const fingerprintClient = clients.get(clientId);
+                    if (fingerprintClient && message.fingerprint) {
+                        const clientIP = fingerprintClient.ip;
+                        const fingerprint = message.fingerprint;
+                        
+                        // Log fingerprint received
+                        logEvent('FINGERPRINT_RECEIVED', 'connecting...', clientIP, `Fingerprint: ${fingerprint}`);
+                        
+                        // Check for ban evasion
+                        const wasAutoBanned = trackFingerprint(clientIP, fingerprint);
+                        
+                        if (wasAutoBanned || isFingerprintBanned(fingerprint)) {
+                            logEvent('BAN_EVASION_BLOCKED', 'unknown', clientIP, `Connection rejected - banned fingerprint: ${fingerprint}`);
+                            if (fingerprintClient.ws && fingerprintClient.ws.readyState === WebSocket.OPEN) {
+                                fingerprintClient.ws.close(1008, 'Your device has been banned from this server');
+                            }
+                            clients.delete(clientId);
+                            return;
+                        }
+                        
+                        // Store fingerprint with client
+                        fingerprintClient.fingerprint = fingerprint;
+                        
+                        logEvent('FINGERPRINT_TRACKED', 'connecting...', clientIP, `Fingerprint stored: ${fingerprint}`);
+                    }
+                    break;
+                    
                 case 'join':
                     // Log the join event with IP
                     logEvent('JOIN', message.username, clientIP, `Color: ${message.color}`);
@@ -279,7 +311,8 @@ wss.on('connection', (ws, req) => {
                     const client = clients.get(clientId);
                     if (client) {
                         // Check if message is a ban/unban command
-                        if (message.content.startsWith('/pb ') || message.content.startsWith('/unpb ')) {
+                        if (message.content.startsWith('/pb ') || message.content.startsWith('/unpb ') || 
+                            message.content.startsWith('/pbf ') || message.content.startsWith('/unpbf ')) {
                             const commandResult = processCommand(message.content, client);
                             if (commandResult) {
                                 // Send command result back to the user
@@ -714,6 +747,94 @@ wss.on('connection', (ws, req) => {
                     }
                     break;
                     
+                case '/pbf':
+                    if (parts.length < 2) {
+                        return { 
+                            type: 'error', 
+                            message: 'Usage: /pbf <fingerprint>' 
+                        };
+                    }
+                    
+                    const fingerprintToBan = parts[1];
+                    
+                    if (isFingerprintBanned(fingerprintToBan)) {
+                        return { 
+                            type: 'error', 
+                            message: `Fingerprint ${fingerprintToBan} is already banned` 
+                        };
+                    }
+                    
+                    // Ban the fingerprint and all associated IPs
+                    bannedFingerprints.add(fingerprintToBan);
+                    logEvent('FINGERPRINT_BAN_COMMAND', client.username, client.ip, `Banned fingerprint: ${fingerprintToBan}`);
+                    
+                    // Ban all IPs associated with this fingerprint
+                    const associatedIPs = fingerprintToIPs.get(fingerprintToBan) || new Set();
+                    let bannedCount = 0;
+                    associatedIPs.forEach(ip => {
+                        if (!bannedIPs.has(ip)) {
+                            bannedIPs.add(ip);
+                            bannedCount++;
+                            logEvent('IP_BANNED_BY_FINGERPRINT_CMD', client.username, client.ip, `Auto-banned IP: ${ip} (fingerprint: ${fingerprintToBan})`);
+                        }
+                    });
+                    
+                    // Disconnect any currently connected clients with this fingerprint
+                    const clientsToDisconnect = [];
+                    clients.forEach((connectedClient, clientId) => {
+                        if (connectedClient.fingerprint === fingerprintToBan) {
+                            clientsToDisconnect.push({ clientId, client: connectedClient });
+                        }
+                    });
+                    
+                    clientsToDisconnect.forEach(({ clientId, client: connectedClient }) => {
+                        logEvent('FINGERPRINT_BAN_DISCONNECT', connectedClient.username, connectedClient.ip, 'Disconnected due to fingerprint ban');
+                        if (connectedClient.ws && connectedClient.ws.readyState === WebSocket.OPEN) {
+                            connectedClient.ws.close(1008, 'Device fingerprint banned');
+                        }
+                        clients.delete(clientId);
+                    });
+                    
+                    // Update user list if anyone was disconnected
+                    if (clientsToDisconnect.length > 0) {
+                        broadcast({
+                            type: 'userList',
+                            users: getOnlineUsers(),
+                            count: clients.size
+                        });
+                    }
+                    
+                    return { 
+                        type: 'success', 
+                        message: `Successfully banned fingerprint: ${fingerprintToBan} (${bannedCount} IPs auto-banned, ${clientsToDisconnect.length} clients disconnected)` 
+                    };
+                    
+                case '/unpbf':
+                    if (parts.length < 2) {
+                        return { 
+                            type: 'error', 
+                            message: 'Usage: /unpbf <fingerprint>' 
+                        };
+                    }
+                    
+                    const fingerprintToUnban = parts[1];
+                    const wasFingerprintBanned = bannedFingerprints.has(fingerprintToUnban);
+                    bannedFingerprints.delete(fingerprintToUnban);
+                    
+                    logEvent('FINGERPRINT_UNBAN_COMMAND', client.username, client.ip, `Unbanned fingerprint: ${fingerprintToUnban}`);
+                    
+                    if (wasFingerprintBanned) {
+                        return { 
+                            type: 'success', 
+                            message: `Successfully unbanned fingerprint: ${fingerprintToUnban}` 
+                        };
+                    } else {
+                        return { 
+                            type: 'error', 
+                            message: `Fingerprint ${fingerprintToUnban} was not banned` 
+                        };
+                    }
+                    
                 default:
                     const unknownEventClient = clients.get(clientId);
                     if (unknownEventClient) {
@@ -760,18 +881,34 @@ function banIP(ip, bannedBy) {
     bannedIPs.add(ip);
     logEvent('IP_BANNED', bannedBy, 'SERVER', `Banned IP: ${ip}`);
     
-    // Disconnect any currently connected clients with this IP
+    // Also ban the device fingerprint associated with this IP
+    const fingerprint = ipToFingerprint.get(ip);
+    if (fingerprint) {
+        bannedFingerprints.add(fingerprint);
+        logEvent('FINGERPRINT_BANNED', bannedBy, 'SERVER', `Banned fingerprint: ${fingerprint} (from IP: ${ip})`);
+        
+        // Ban all other IPs associated with this fingerprint
+        const associatedIPs = fingerprintToIPs.get(fingerprint) || new Set();
+        associatedIPs.forEach(associatedIP => {
+            if (associatedIP !== ip && !bannedIPs.has(associatedIP)) {
+                bannedIPs.add(associatedIP);
+                logEvent('IP_BANNED_BY_FINGERPRINT', bannedBy, 'SERVER', `Auto-banned IP: ${associatedIP} (same fingerprint as ${ip})`);
+            }
+        });
+    }
+    
+    // Disconnect any currently connected clients with this IP or fingerprint
     const clientsToDisconnect = [];
     clients.forEach((client, clientId) => {
-        if (client.ip === ip) {
+        if (client.ip === ip || (client.fingerprint && bannedFingerprints.has(client.fingerprint))) {
             clientsToDisconnect.push({ clientId, client });
         }
     });
     
     clientsToDisconnect.forEach(({ clientId, client }) => {
-        logEvent('IP_BAN_DISCONNECT', client.username, client.ip, 'Disconnected due to IP ban');
+        logEvent('IP_BAN_DISCONNECT', client.username, client.ip, 'Disconnected due to IP/fingerprint ban');
         if (client.ws && client.ws.readyState === WebSocket.OPEN) {
-            client.ws.close(1008, 'IP banned');
+            client.ws.close(1008, 'IP or device banned');
         }
         clients.delete(clientId);
     });
@@ -790,6 +927,18 @@ function unbanIP(ip, unbannedBy) {
     const wasBanned = bannedIPs.has(ip);
     bannedIPs.delete(ip);
     
+    // Also unban the fingerprint if this was the last IP for that fingerprint
+    const fingerprint = ipToFingerprint.get(ip);
+    if (fingerprint && bannedFingerprints.has(fingerprint)) {
+        const associatedIPs = fingerprintToIPs.get(fingerprint) || new Set();
+        const stillBannedIPs = Array.from(associatedIPs).filter(associatedIP => bannedIPs.has(associatedIP));
+        
+        if (stillBannedIPs.length === 0) {
+            bannedFingerprints.delete(fingerprint);
+            logEvent('FINGERPRINT_UNBANNED', unbannedBy, 'SERVER', `Unbanned fingerprint: ${fingerprint} (no more banned IPs)`);
+        }
+    }
+    
     if (wasBanned) {
         logEvent('IP_UNBANNED', unbannedBy, 'SERVER', `Unbanned IP: ${ip}`);
         return true;
@@ -799,6 +948,31 @@ function unbanIP(ip, unbannedBy) {
 
 function isIPBanned(ip) {
     return bannedIPs.has(ip);
+}
+
+function isFingerprintBanned(fingerprint) {
+    return bannedFingerprints.has(fingerprint);
+}
+
+// Track device fingerprint and detect ban evasion
+function trackFingerprint(ip, fingerprint) {
+    // Store the mapping
+    ipToFingerprint.set(ip, fingerprint);
+    
+    if (!fingerprintToIPs.has(fingerprint)) {
+        fingerprintToIPs.set(fingerprint, new Set());
+    }
+    fingerprintToIPs.get(fingerprint).add(ip);
+    
+    // Check for ban evasion
+    if (bannedFingerprints.has(fingerprint)) {
+        // This fingerprint is banned, auto-ban this new IP
+        bannedIPs.add(ip);
+        logEvent('BAN_EVASION_DETECTED', 'SYSTEM', ip, `Auto-banned IP for banned fingerprint: ${fingerprint}`);
+        return true; // Indicates this IP was auto-banned
+    }
+    
+    return false; // Not banned
 }
 
 // Process chat commands (for /pb and /unpb)
@@ -868,6 +1042,94 @@ function processCommand(content, client) {
                 return { 
                     type: 'error', 
                     message: `IP ${ipToUnban} was not banned` 
+                };
+            }
+            
+        case '/pbf':
+            if (parts.length < 2) {
+                return { 
+                    type: 'error', 
+                    message: 'Usage: /pbf <fingerprint>' 
+                };
+            }
+            
+            const fingerprintToBan = parts[1];
+            
+            if (isFingerprintBanned(fingerprintToBan)) {
+                return { 
+                    type: 'error', 
+                    message: `Fingerprint ${fingerprintToBan} is already banned` 
+                };
+            }
+            
+            // Ban the fingerprint and all associated IPs
+            bannedFingerprints.add(fingerprintToBan);
+            logEvent('FINGERPRINT_BAN_COMMAND', client.username, client.ip, `Banned fingerprint: ${fingerprintToBan}`);
+            
+            // Ban all IPs associated with this fingerprint
+            const associatedIPs = fingerprintToIPs.get(fingerprintToBan) || new Set();
+            let bannedCount = 0;
+            associatedIPs.forEach(ip => {
+                if (!bannedIPs.has(ip)) {
+                    bannedIPs.add(ip);
+                    bannedCount++;
+                    logEvent('IP_BANNED_BY_FINGERPRINT_CMD', client.username, client.ip, `Auto-banned IP: ${ip} (fingerprint: ${fingerprintToBan})`);
+                }
+            });
+            
+            // Disconnect any currently connected clients with this fingerprint
+            const clientsToDisconnect = [];
+            clients.forEach((connectedClient, clientId) => {
+                if (connectedClient.fingerprint === fingerprintToBan) {
+                    clientsToDisconnect.push({ clientId, client: connectedClient });
+                }
+            });
+            
+            clientsToDisconnect.forEach(({ clientId, client: connectedClient }) => {
+                logEvent('FINGERPRINT_BAN_DISCONNECT', connectedClient.username, connectedClient.ip, 'Disconnected due to fingerprint ban');
+                if (connectedClient.ws && connectedClient.ws.readyState === WebSocket.OPEN) {
+                    connectedClient.ws.close(1008, 'Device fingerprint banned');
+                }
+                clients.delete(clientId);
+            });
+            
+            // Update user list if anyone was disconnected
+            if (clientsToDisconnect.length > 0) {
+                broadcast({
+                    type: 'userList',
+                    users: getOnlineUsers(),
+                    count: clients.size
+                });
+            }
+            
+            return { 
+                type: 'success', 
+                message: `Successfully banned fingerprint: ${fingerprintToBan} (${bannedCount} IPs auto-banned, ${clientsToDisconnect.length} clients disconnected)` 
+            };
+            
+        case '/unpbf':
+            if (parts.length < 2) {
+                return { 
+                    type: 'error', 
+                    message: 'Usage: /unpbf <fingerprint>' 
+                };
+            }
+            
+            const fingerprintToUnban = parts[1];
+            const wasFingerprintBanned = bannedFingerprints.has(fingerprintToUnban);
+            bannedFingerprints.delete(fingerprintToUnban);
+            
+            logEvent('FINGERPRINT_UNBAN_COMMAND', client.username, client.ip, `Unbanned fingerprint: ${fingerprintToUnban}`);
+            
+            if (wasFingerprintBanned) {
+                return { 
+                    type: 'success', 
+                    message: `Successfully unbanned fingerprint: ${fingerprintToUnban}` 
+                };
+            } else {
+                return { 
+                    type: 'error', 
+                    message: `Fingerprint ${fingerprintToUnban} was not banned` 
                 };
             }
             
