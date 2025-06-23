@@ -124,43 +124,42 @@ app.get('*', (req, res) => {
 // Store connected clients and chat history
 const clients = new Map();
 const chatHistory = [];
-const userDataByIP = new Map(); // store user data by IP for persistence
+const dmHistory = new Map(); // Store DM conversations by IP pairs
 const MAX_MESSAGES = 128;
+const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
 
 // Generate unique ID for each client
 function generateId() {
     return Math.random().toString(36).substr(2, 9);
 }
 
-// validate username format
-function isValidUsername(username) {
-    if (!username || username.length === 0 || username.length > 16) return false;
-    // only letters, numbers, and underscores allowed
-    return /^[a-zA-Z0-9_]+$/.test(username);
+// Create DM conversation key from two IPs (sorted for consistency)
+function getDMKey(ip1, ip2) {
+    return [ip1, ip2].sort().join('_');
 }
 
-// check if username is already taken by another IP
-function isUsernameTaken(username, currentIP) {
-    for (const [ip, userData] of userDataByIP.entries()) {
-        if (ip !== currentIP && userData.username === username) {
-            return true;
-        }
+// Get DM history between two IPs
+function getDMHistory(ip1, ip2) {
+    const key = getDMKey(ip1, ip2);
+    if (!dmHistory.has(key)) {
+        dmHistory.set(key, []);
     }
-    return false;
+    return dmHistory.get(key);
 }
 
-// get or create user data for an IP
-function getUserDataForIP(ip) {
-    if (!userDataByIP.has(ip)) {
-        // new user, no data yet
-        return null;
+// Add DM message to history
+function addDMMessage(ip1, ip2, message) {
+    const key = getDMKey(ip1, ip2);
+    if (!dmHistory.has(key)) {
+        dmHistory.set(key, []);
     }
-    return userDataByIP.get(ip);
-}
-
-// save user data for an IP
-function saveUserDataForIP(ip, userData) {
-    userDataByIP.set(ip, userData);
+    const conversation = dmHistory.get(key);
+    conversation.push(message);
+    
+    // Maintain max size for DM conversations (512 messages)
+    if (conversation.length > MAX_DM_MESSAGES) {
+        conversation.shift();
+    }
 }
 
 // Broadcast message to all connected clients
@@ -200,91 +199,11 @@ wss.on('connection', (ws, req) => {
     // Get client IP address
     const clientIP = req.socket.remoteAddress || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
     
-    console.log(`🔌 New connection from IP: ${clientIP}`);
-    
-    // check if we have existing user data for this IP
-    const existingUserData = getUserDataForIP(clientIP);
-    
-    if (existingUserData) {
-        console.log(`🔄 Found existing user data for IP ${clientIP}: ${existingUserData.username}`);
-        // send the user data back to client so they can restore localStorage
-        ws.send(JSON.stringify({
-            type: 'userDataRestore',
-            userData: existingUserData
-        }));
-    } else {
-        console.log(`🆕 New IP ${clientIP}, will need registration`);
-    }
-    
     ws.on('message', (data) => {
         try {
             const message = JSON.parse(data);
             
             switch (message.type) {
-                case 'checkUsername':
-                    // validate username format and availability
-                    const username = message.username;
-                    const isValid = isValidUsername(username);
-                    const isTaken = isValid ? isUsernameTaken(username, clientIP) : false;
-                    
-                    ws.send(JSON.stringify({
-                        type: 'usernameCheck',
-                        username: username,
-                        isValid: isValid,
-                        isTaken: isTaken,
-                        error: !isValid ? 'Username must be 1-16 characters, letters/numbers/underscores only' : 
-                               isTaken ? 'Username already taken' : null
-                    }));
-                    break;
-                    
-                case 'register':
-                    // complete user registration
-                    const regUsername = message.username;
-                    const displayName = message.displayName;
-                    const color = message.color;
-                    
-                    // validate everything
-                    if (!isValidUsername(regUsername)) {
-                        ws.send(JSON.stringify({
-                            type: 'registrationError',
-                            error: 'Invalid username format'
-                        }));
-                        break;
-                    }
-                    
-                    if (isUsernameTaken(regUsername, clientIP)) {
-                        ws.send(JSON.stringify({
-                            type: 'registrationError',
-                            error: 'Username already taken'
-                        }));
-                        break;
-                    }
-                    
-                    if (!displayName || displayName.trim().length === 0) {
-                        ws.send(JSON.stringify({
-                            type: 'registrationError',
-                            error: 'Display name is required'
-                        }));
-                        break;
-                    }
-                    
-                    // save user data
-                    const userData = {
-                        username: regUsername,
-                        display: displayName.trim(),
-                        color: color || '#ff6b6b'
-                    };
-                    
-                    saveUserDataForIP(clientIP, userData);
-                    
-                    ws.send(JSON.stringify({
-                        type: 'registrationSuccess',
-                        userData: userData
-                    }));
-                    
-                    console.log(`✅ Registered new user: ${regUsername} (${displayName}) from IP ${clientIP}`);
-                    break;
-                
                 case 'join':
                     // Store client info with IP
                     const clientInfo = {
@@ -365,6 +284,98 @@ wss.on('connection', (ws, req) => {
                         
                         // Broadcast to all clients
                         broadcast(chatMessage);
+                    }
+                    break;
+                    
+                case 'dmMessage':
+                    const dmSender = clients.get(clientId);
+                    if (dmSender && message.targetUsername) {
+                        // Find the target user by username
+                        let targetClient = null;
+                        for (const [id, client] of clients.entries()) {
+                            if (client.username === message.targetUsername) {
+                                targetClient = client;
+                                break;
+                            }
+                        }
+                        
+                        if (targetClient) {
+                            console.log(`DM from ${dmSender.username} (${dmSender.ip}) to ${targetClient.username} (${targetClient.ip})`);
+                            
+                            const dmMessage = {
+                                type: 'dmMessage',
+                                id: generateId(),
+                                senderUsername: dmSender.username,
+                                senderColor: dmSender.color,
+                                targetUsername: targetClient.username,
+                                content: message.content,
+                                timestamp: Date.now()
+                            };
+                            
+                            // Add attachments if present
+                            if (message.attachments && message.attachments.length > 0) {
+                                dmMessage.attachments = message.attachments;
+                            }
+                            
+                            // Store DM in history using IPs
+                            addDMMessage(dmSender.ip, targetClient.ip, dmMessage);
+                            
+                            // Send to both sender and recipient if they're online
+                            if (dmSender.ws && dmSender.ws.readyState === WebSocket.OPEN) {
+                                dmSender.ws.send(JSON.stringify(dmMessage));
+                            }
+                            if (targetClient.ws && targetClient.ws.readyState === WebSocket.OPEN) {
+                                targetClient.ws.send(JSON.stringify(dmMessage));
+                            }
+                        } else {
+                            // Target user not found/online
+                            if (dmSender.ws && dmSender.ws.readyState === WebSocket.OPEN) {
+                                dmSender.ws.send(JSON.stringify({
+                                    type: 'dmError',
+                                    message: 'User not found or offline'
+                                }));
+                            }
+                        }
+                    }
+                    break;
+                    
+                case 'getDMHistory':
+                    const historyClient = clients.get(clientId);
+                    if (historyClient && message.targetUsername) {
+                        console.log(`📞 DM History request from ${historyClient.username} for ${message.targetUsername}`);
+                        
+                        // Find the target user by username to get their IP
+                        let targetIP = null;
+                        for (const [id, client] of clients.entries()) {
+                            if (client.username === message.targetUsername) {
+                                targetIP = client.ip;
+                                break;
+                            }
+                        }
+                        
+                        let dmConversation = [];
+                        
+                        if (targetIP) {
+                            console.log(`📞 Found target IP: ${targetIP}`);
+                            dmConversation = getDMHistory(historyClient.ip, targetIP);
+                            console.log(`📞 Found ${dmConversation.length} messages`);
+                        } else {
+                            console.log(`📞 Target user ${message.targetUsername} not found online - no conversation available`);
+                            // For privacy and security, we do NOT search through other conversations
+                            // If the target user is not online, we simply return empty history
+                            // This prevents potential privacy leaks where users might see conversations
+                            // from different IP addresses that happen to use the same username
+                            dmConversation = [];
+                        }
+                        
+                        // Always send a response to prevent loading state from hanging
+                        if (historyClient.ws && historyClient.ws.readyState === WebSocket.OPEN) {
+                            historyClient.ws.send(JSON.stringify({
+                                type: 'dmHistory',
+                                targetUsername: message.targetUsername,
+                                messages: dmConversation
+                            }));
+                        }
                     }
                     break;
                     

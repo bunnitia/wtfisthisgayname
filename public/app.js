@@ -1,63 +1,647 @@
 class ChatApp {
     constructor() {
-        this.ws = null;
+        this.socket = null;
         this.username = '';
-        this.color = '#ff6b6b';
-        this.displayName = ''; // new property for display name
-        this.website = '';
-        this.unreadCount = 0;
+        this.userColor = '#ff6b6b';
+        this.userWebsite = ''; // Add website field
+        this.currentUserId = null;
         this.isTyping = false;
         this.typingTimeout = null;
-        this.attachments = [];
-        this.dmAttachments = [];
-        this.replyingTo = null;
-        this.isEditingMessage = false;
-        this.editingMessageId = null;
-        this.editingMessageDiv = null;
+        this.cursors = new Map(); // Store other users' cursors
+        this.cursorThrottle = null; // For throttling cursor updates
+        this.typingTimeouts = new Map(); // Track typing timeouts for cursors
+        this.replyingTo = null; // Current message being replied to
+        this.messageElements = new Map(); // Store message elements by ID for jumping
+        this.autoScrollEnabled = true; // Auto scroll state
+        this.currentSettings = {
+            appearance: {
+                gradientColor1: '#1a1a2e',
+                gradientColor2: '#0f3460'
+            },
+            safety: {
+                censorSwears: false,
+                spoilerImages: true
+            },
+            notifications: {
+                pingSound: true
+            }
+        };
+        
+        // Unread message tracking
+        this.unreadCount = 0;
+        this.isWindowFocused = true;
+        this.faviconCanvas = null;
+        this.faviconContext = null;
+        this.originalFavicon = null;
+        
+        // Spam protection
         this.messageTimestamps = [];
         this.isMuted = false;
-        this.muteEndTime = 0;
-        this.mentionQuery = '';
-        this.mentionStartPos = 0;
-        this.selectedMentionIndex = -1;
-        this.autoScroll = true;
-        this.isScrolledUp = false;
+        this.muteEndTime = null;
+        this.muteTimer = null;
         
-        // registration state tracking
-        this.isRegistered = false;
-        this.isUsernameValid = false;
-        this.isUsernameTaken = false;
-        this.usernameCheckTimeout = null;
+        // User websites storage for clickable usernames
+        this.userWebsites = new Map();
+        
+        // DM functionality
+        this.currentDMUser = null; // Currently open DM conversation
+        this.dmConversations = new Map(); // Store DM history by conversation pair key
+        
+        // Generate conversation key for DM storage (similar to server)
+        this.getDMConversationKey = (username1, username2) => {
+            return [username1, username2].sort().join('_');
+        };
+        
+        // Emoji mapping for :emoji_name: format
+        this.emojiMap = {
+            // Smileys & People
+            ':smile:': '😀',
+            ':grin:': '😁',
+            ':joy:': '😂',
+            ':rofl:': '🤣',
+            ':relaxed:': '😌',
+            ':blush:': '😊',
+            ':innocent:': '😇',
+            ':wink:': '😉',
+            ':heart_eyes:': '😍',
+            ':kissing_heart:': '😘',
+            ':thinking:': '🤔',
+            ':neutral_face:': '😐',
+            ':expressionless:': '😑',
+            ':confused:': '😕',
+            ':worried:': '😟',
+            ':cry:': '😢',
+            ':sob:': '😭',
+            ':angry:': '😠',
+            ':rage:': '😡',
+            ':triumph:': '😤',
+            ':sleepy:': '😪',
+            ':dizzy_face:': '😵',
+            ':mask:': '😷',
+            ':sunglasses:': '😎',
+            ':smirk:': '😏',
+            ':stuck_out_tongue:': '😛',
+            ':stuck_out_tongue_winking_eye:': '😜',
+            ':stuck_out_tongue_closed_eyes:': '😝',
+            ':unamused:': '😒',
+            ':sweat_smile:': '😅',
+            ':sweat:': '😓',
+            ':disappointed_relieved:': '😥',
+            ':weary:': '😩',
+            ':pensive:': '😔',
+            ':disappointed:': '😞',
+            ':confounded:': '😖',
+            ':fearful:': '😨',
+            ':cold_sweat:': '😰',
+            ':persevere:': '😣',
+            ':frowning:': '☹️',
+            ':anguished:': '😧',
+            ':grimacing:': '😬',
+            ':open_mouth:': '😮',
+            ':hushed:': '😯',
+            ':astonished:': '😲',
+            ':flushed:': '😳',
+            ':scream:': '😱',
+            ':heart:': '❤️',
+            ':broken_heart:': '💔',
+            ':two_hearts:': '💕',
+            ':sparkling_heart:': '💖',
+            ':heartpulse:': '💗',
+            ':blue_heart:': '💙',
+            ':green_heart:': '💚',
+            ':yellow_heart:': '💛',
+            ':purple_heart:': '💜',
+            ':black_heart:': '🖤',
+            ':white_heart:': '🤍',
+            ':brown_heart:': '🤎',
+            ':orange_heart:': '🧡',
+            
+            // Gestures & Body Parts
+            ':thumbsup:': '👍',
+            ':thumbsdown:': '👎',
+            ':clap:': '👏',
+            ':raised_hands:': '🙌',
+            ':pray:': '🙏',
+            ':muscle:': '💪',
+            ':point_up:': '☝️',
+            ':point_down:': '👇',
+            ':point_left:': '👈',
+            ':point_right:': '👉',
+            ':ok_hand:': '👌',
+            ':v:': '✌️',
+            ':crossed_fingers:': '🤞',
+            ':wave:': '👋',
+            ':call_me_hand:': '🤙',
+            ':raised_hand:': '✋',
+            ':fist:': '✊',
+            ':punch:': '👊',
+            
+            // Animals & Nature
+            ':dog:': '🐶',
+            ':cat:': '🐱',
+            ':mouse:': '🐭',
+            ':hamster:': '🐹',
+            ':rabbit:': '🐰',
+            ':fox:': '🦊',
+            ':bear:': '🐻',
+            ':panda:': '🐼',
+            ':koala:': '🐨',
+            ':tiger:': '🐯',
+            ':lion:': '🦁',
+            ':cow:': '🐮',
+            ':pig:': '🐷',
+            ':frog:': '🐸',
+            ':monkey:': '🐵',
+            ':chicken:': '🐔',
+            ':penguin:': '🐧',
+            ':bird:': '🐦',
+            ':baby_chick:': '🐤',
+            ':bee:': '🐝',
+            ':bug:': '🐛',
+            ':butterfly:': '🦋',
+            ':snail:': '🐌',
+            ':snake:': '🐍',
+            ':dragon:': '🐉',
+            ':cactus:': '🌵',
+            ':christmas_tree:': '🎄',
+            ':evergreen_tree:': '🌲',
+            ':deciduous_tree:': '🌳',
+            ':palm_tree:': '🌴',
+            ':seedling:': '🌱',
+            ':herb:': '🌿',
+            ':shamrock:': '☘️',
+            ':four_leaf_clover:': '🍀',
+            ':bamboo:': '🎋',
+            ':tulip:': '🌷',
+            ':cherry_blossom:': '🌸',
+            ':blossom:': '🌼',
+            ':hibiscus:': '🌺',
+            ':sunflower:': '🌻',
+            ':rose:': '🌹',
+            ':wilted_flower:': '🥀',
+            ':bouquet:': '💐',
+            
+            // Food & Drink
+            ':apple:': '🍎',
+            ':orange:': '🍊',
+            ':lemon:': '🍋',
+            ':banana:': '🍌',
+            ':watermelon:': '🍉',
+            ':grapes:': '🍇',
+            ':strawberry:': '🍓',
+            ':melon:': '🍈',
+            ':cherries:': '🍒',
+            ':peach:': '🍑',
+            ':pineapple:': '🍍',
+            ':coconut:': '🥥',
+            ':kiwi:': '🥝',
+            ':avocado:': '🥑',
+            ':tomato:': '🍅',
+            ':eggplant:': '🍆',
+            ':cucumber:': '🥒',
+            ':carrot:': '🥕',
+            ':corn:': '🌽',
+            ':hot_pepper:': '🌶️',
+            ':potato:': '🥔',
+            ':sweet_potato:': '🍠',
+            ':mushroom:': '🍄',
+            ':peanuts:': '🥜',
+            ':chestnut:': '🌰',
+            ':bread:': '🍞',
+            ':croissant:': '🥐',
+            ':bagel:': '🥯',
+            ':pretzel:': '🥨',
+            ':cheese:': '🧀',
+            ':egg:': '🥚',
+            ':hamburger:': '🍔',
+            ':fries:': '🍟',
+            ':hotdog:': '🌭',
+            ':pizza:': '🍕',
+            ':sandwich:': '🥪',
+            ':taco:': '🌮',
+            ':burrito:': '🌯',
+            ':cookie:': '🍪',
+            ':cake:': '🍰',
+            ':birthday:': '🎂',
+            ':cupcake:': '🧁',
+            ':pie:': '🥧',
+            ':chocolate_bar:': '🍫',
+            ':candy:': '🍬',
+            ':lollipop:': '🍭',
+            ':honey_pot:': '🍯',
+            ':coffee:': '☕',
+            ':tea:': '🍵',
+            ':beer:': '🍺',
+            ':wine_glass:': '🍷',
+            ':cocktail:': '🍸',
+            ':tropical_drink:': '🍹',
+            ':champagne:': '🍾',
+            ':milk_glass:': '🥛',
+            
+            // Activities & Objects
+            ':soccer:': '⚽',
+            ':basketball:': '🏀',
+            ':football:': '🏈',
+            ':baseball:': '⚾',
+            ':tennis:': '🎾',
+            ':volleyball:': '🏐',
+            ':rugby_football:': '🏉',
+            ':8ball:': '🎱',
+            ':golf:': '⛳',
+            ':ski:': '🎿',
+            ':snowboard:': '🏂',
+            ':trophy:': '🏆',
+            ':medal:': '🏅',
+            ':1st_place_medal:': '🥇',
+            ':2nd_place_medal:': '🥈',
+            ':3rd_place_medal:': '🥉',
+            ':dart:': '🎯',
+            ':bow_and_arrow:': '🏹',
+            ':fishing_pole_and_fish:': '🎣',
+            ':boxing_glove:': '🥊',
+            ':martial_arts_uniform:': '🥋',
+            ':guitar:': '🎸',
+            ':musical_keyboard:': '🎹',
+            ':trumpet:': '🎺',
+            ':violin:': '🎻',
+            ':drum:': '🥁',
+            ':microphone:': '🎤',
+            ':headphones:': '🎧',
+            ':radio:': '📻',
+            ':saxophone:': '🎷',
+            ':art:': '🎨',
+            ':clapper:': '🎬',
+            ':video_camera:': '📹',
+            ':camera:': '📷',
+            ':camera_flash:': '📸',
+            ':space_invader:': '👾',
+            ':video_game:': '🎮',
+            ':game_die:': '🎲',
+            ':jigsaw:': '🧩',
+            ':teddy_bear:': '🧸',
+            
+            // Symbols & Objects
+            ':fire:': '🔥',
+            ':star:': '⭐',
+            ':star2:': '🌟',
+            ':sparkles:': '✨',
+            ':zap:': '⚡',
+            ':boom:': '💥',
+            ':collision:': '💢',
+            ':dizzy:': '💫',
+            ':sweat_drops:': '💦',
+            ':droplet:': '💧',
+            ':zzz:': '💤',
+            ':dash:': '💨',
+            ':bomb:': '💣',
+            ':speech_balloon:': '💬',
+            ':thought_balloon:': '💭',
+            ':100:': '💯',
+            ':moneybag:': '💰',
+            ':gem:': '💎',
+            ':dollar:': '💲',
+            ':credit_card:': '💳',
+            ':envelope:': '✉️',
+            ':email:': '📧',
+            ':inbox_tray:': '📥',
+            ':outbox_tray:': '📤',
+            ':package:': '📦',
+            ':mailbox:': '📪',
+            ':mailbox_with_mail:': '📬',
+            ':postbox:': '📮',
+            ':newspaper:': '📰',
+            ':book:': '📖',
+            ':books:': '📚',
+            ':notebook:': '📓',
+            ':ledger:': '📒',
+            ':page_with_curl:': '📃',
+            ':scroll:': '📜',
+            ':page_facing_up:': '📄',
+            ':bookmark:': '🔖',
+            ':label:': '🏷️',
+            ':pencil2:': '✏️',
+            ':black_nib:': '✒️',
+            ':fountain_pen:': '🖋️',
+            ':ballpoint_pen:': '🖊️',
+            ':paintbrush:': '🖌️',
+            ':crayon:': '🖍️',
+            ':memo:': '📝',
+            ':briefcase:': '💼',
+            ':file_folder:': '📁',
+            ':open_file_folder:': '📂',
+            ':card_index_dividers:': '🗂️',
+            ':calendar:': '📅',
+            ':date:': '📆',
+            ':spiral_notepad:': '🗒️',
+            ':spiral_calendar:': '🗓️',
+            ':card_index:': '📇',
+            ':chart_with_upwards_trend:': '📈',
+            ':chart_with_downwards_trend:': '📉',
+            ':bar_chart:': '📊',
+            ':clipboard:': '📋',
+            ':pushpin:': '📌',
+            ':round_pushpin:': '📍',
+            ':paperclip:': '📎',
+            ':paperclips:': '🖇️',
+            ':straight_ruler:': '📏',
+            ':triangular_ruler:': '📐',
+            ':scissors:': '✂️',
+            ':card_file_box:': '🗃️',
+            ':file_cabinet:': '🗄️',
+            ':wastebasket:': '🗑️',
+            ':lock:': '🔒',
+            ':unlock:': '🔓',
+            ':lock_with_ink_pen:': '🔏',
+            ':closed_lock_with_key:': '🔐',
+            ':key:': '🔑',
+            ':old_key:': '🗝️',
+            ':hammer:': '🔨',
+            ':pick:': '⛏️',
+            ':hammer_and_pick:': '⚒️',
+            ':hammer_and_wrench:': '🛠️',
+            ':dagger:': '🗡️',
+            ':crossed_swords:': '⚔️',
+            ':gun:': '🔫',
+            ':shield:': '🛡️',
+            ':wrench:': '🔧',
+            ':nut_and_bolt:': '🔩',
+            ':gear:': '⚙️',
+            ':clamp:': '🗜️',
+            ':balance_scale:': '⚖️',
+            ':link:': '🔗',
+            ':chains:': '⛓️',
+            ':syringe:': '💉',
+            ':pill:': '💊',
+            ':smoking:': '🚬',
+            ':coffin:': '⚰️',
+            ':funeral_urn:': '⚱️',
+            ':amphora:': '🏺',
+            ':crystal_ball:': '🔮',
+            ':prayer_beads:': '📿',
+            ':barber:': '💈',
+            ':alembic:': '⚗️',
+            ':telescope:': '🔭',
+            ':microscope:': '🔬',
+            ':hole:': '🕳️',
+            ':pill:': '💊',
+            ':thermometer:': '🌡️',
+            ':broom:': '🧹',
+            ':basket:': '🧺',
+            ':toilet_paper:': '🧻',
+            ':soap:': '🧼',
+            ':sponge:': '🧽',
+            ':fire_extinguisher:': '🧯',
+            ':shopping_cart:': '🛒',
+            
+            // Travel & Places
+            ':car:': '🚗',
+            ':taxi:': '🚕',
+            ':blue_car:': '🚙',
+            ':bus:': '🚌',
+            ':trolleybus:': '🚎',
+            ':racing_car:': '🏎️',
+            ':police_car:': '🚓',
+            ':ambulance:': '🚑',
+            ':fire_engine:': '🚒',
+            ':minibus:': '🚐',
+            ':truck:': '🚚',
+            ':articulated_lorry:': '🚛',
+            ':tractor:': '🚜',
+            ':kick_scooter:': '🛴',
+            ':bike:': '🚲',
+            ':motor_scooter:': '🛵',
+            ':motorcycle:': '🏍️',
+            ':rotating_light:': '🚨',
+            ':oncoming_police_car:': '🚔',
+            ':oncoming_bus:': '🚍',
+            ':oncoming_automobile:': '🚘',
+            ':oncoming_taxi:': '🚖',
+            ':aerial_tramway:': '🚡',
+            ':mountain_cableway:': '🚠',
+            ':suspension_railway:': '🚟',
+            ':railway_car:': '🚃',
+            ':train:': '🚋',
+            ':monorail:': '🚝',
+            ':bullettrain_side:': '🚄',
+            ':bullettrain_front:': '🚅',
+            ':light_rail:': '🚈',
+            ':mountain_railway:': '🚞',
+            ':steam_locomotive:': '🚂',
+            ':train2:': '🚆',
+            ':metro:': '🚇',
+            ':tram:': '🚊',
+            ':station:': '🚉',
+            ':airplane:': '✈️',
+            ':small_airplane:': '🛩️',
+            ':airplane_departure:': '🛫',
+            ':airplane_arrival:': '🛬',
+            ':rocket:': '🚀',
+            ':artificial_satellite:': '🛰️',
+            ':seat:': '💺',
+            ':helicopter:': '🚁',
+            ':canoe:': '🛶',
+            ':speedboat:': '🚤',
+            ':motorboat:': '🛥️',
+            ':cruise_ship:': '🛳️',
+            ':passenger_ship:': '🛳️',
+            ':ferry:': '⛴️',
+            ':sailboat:': '⛵',
+            ':rowboat:': '🚣',
+            ':anchor:': '⚓',
+            ':construction:': '🚧',
+            ':fuelpump:': '⛽',
+            ':busstop:': '🚏',
+            ':vertical_traffic_light:': '🚦',
+            ':traffic_light:': '🚥',
+            ':checkered_flag:': '🏁',
+            ':ship:': '🚢',
+            ':ferris_wheel:': '🎡',
+            ':roller_coaster:': '🎢',
+            ':carousel_horse:': '🎠',
+            ':building_construction:': '🏗️',
+            ':foggy:': '🌁',
+            ':tokyo_tower:': '🗼',
+            ':factory:': '🏭',
+            ':fountain:': '⛲',
+            ':rice_scene:': '🎑',
+            ':mountain:': '⛰️',
+            ':mountain_snow:': '🏔️',
+            ':mount_fuji:': '🗻',
+            ':volcano:': '🌋',
+            ':desert:': '🏜️',
+            ':beach_umbrella:': '🏖️',
+            ':desert_island:': '🏝️',
+            ':sunrise_over_mountains:': '🌄',
+            ':sunrise:': '🌅',
+            ':city_sunset:': '🌇',
+            ':city_sunrise:': '🌆',
+            ':night_with_stars:': '🌃',
+            ':bridge_at_night:': '🌉',
+            ':milky_way:': '🌌',
+            ':stars:': '🌠',
+            ':sparkler:': '🎇',
+            ':fireworks:': '🎆',
+            ':rainbow:': '🌈',
+            ':house:': '🏠',
+            ':house_with_garden:': '🏡',
+            ':derelict_house:': '🏚️',
+            ':office:': '🏢',
+            ':department_store:': '🏬',
+            ':post_office:': '🏣',
+            ':european_post_office:': '🏤',
+            ':hospital:': '🏥',
+            ':bank:': '🏦',
+            ':hotel:': '🏨',
+            ':convenience_store:': '🏪',
+            ':school:': '🏫',
+            ':love_hotel:': '🏩',
+            ':wedding:': '💒',
+            ':classical_building:': '🏛️',
+            ':church:': '⛪',
+            ':mosque:': '🕌',
+            ':synagogue:': '🕍',
+            ':kaaba:': '🕋',
+            ':shinto_shrine:': '⛩️',
+            
+            // Weather & Sky
+            ':sunny:': '☀️',
+            ':partly_sunny:': '⛅',
+            ':cloud:': '☁️',
+            ':mostly_sunny:': '🌤️',
+            ':barely_sunny:': '🌥️',
+            ':partly_sunny_rain:': '🌦️',
+            ':rain_cloud:': '🌧️',
+            ':snow_cloud:': '🌨️',
+            ':lightning:': '🌩️',
+            ':tornado:': '🌪️',
+            ':fog:': '🌫️',
+            ':wind_face:': '🌬️',
+            ':cyclone:': '🌀',
+            ':rainbow:': '🌈',
+            ':closed_umbrella:': '🌂',
+            ':open_umbrella:': '☂️',
+            ':umbrella:': '☔',
+            ':parasol_on_ground:': '⛱️',
+            ':zap:': '⚡',
+            ':snowflake:': '❄️',
+            ':snowman:': '☃️',
+            ':snowman_with_snow:': '⛄',
+            ':comet:': '☄️',
+            ':droplet:': '💧',
+            ':ocean:': '🌊',
+            
+            // Common expressions and reactions
+            ':ok:': '👌',
+            ':cool:': '😎',
+            ':awesome:': '🤩',
+            ':party:': '🎉',
+            ':celebrate:': '🎊',
+            ':tada:': '🎉',
+            ':confetti_ball:': '🎊',
+            ':balloon:': '🎈',
+            ':gift:': '🎁',
+            ':ribbon:': '🎀',
+            ':crown:': '👑',
+            ':gem:': '💎',
+            ':ring:': '💍',
+            ':lipstick:': '💄',
+            ':kiss:': '💋',
+            ':love_letter:': '💌',
+            ':cupid:': '💘',
+            ':gift_heart:': '💝',
+            ':revolving_hearts:': '💞',
+            ':heartbeat:': '💓',
+            ':growing_heart:': '💗',
+            ':two_hearts:': '💕',
+            ':sparkling_heart:': '💖',
+            ':heart_decoration:': '💟',
+            ':peace_symbol:': '☮️',
+            ':yin_yang:': '☯️',
+            ':wheel_of_dharma:': '☸️',
+            ':om:': '🕉️',
+            ':six_pointed_star:': '✡️',
+            ':menorah:': '🕎',
+            ':atom_symbol:': '⚛️',
+            ':warning:': '⚠️',
+            ':radioactive:': '☢️',
+            ':biohazard:': '☣️',
+            ':mobile_phone_off:': '📴',
+            ':vibration_mode:': '📳',
+            ':u6709:': '🈶',
+            ':u7121:': '🈚',
+            ':u7533:': '🈸',
+            ':u55b6:': '🈺',
+            ':u6708:': '🈷️',
+            ':eight_pointed_black_star:': '✴️',
+            ':vs:': '🆚',
+            ':accept:': '🉑',
+            ':white_flower:': '💮',
+            ':ideograph_advantage:': '🉐',
+            ':secret:': '㊙️',
+            ':congratulations:': '㊗️',
+            ':u5408:': '🈴',
+            ':u6e80:': '🈵',
+            ':u5272:': '🈹',
+            ':u7981:': '🈲',
+            ':a:': '🅰️',
+            ':b:': '🅱️',
+            ':ab:': '🆎',
+            ':cl:': '🆑',
+            ':o2:': '🅾️',
+            ':sos:': '🆘',
+            ':no_entry:': '⛔',
+            ':name_badge:': '📛',
+            ':no_entry_sign:': '🚫',
+            ':x:': '❌',
+            ':o:': '⭕',
+            ':stop_sign:': '🛑',
+            ':anger:': '💢',
+            ':hotsprings:': '♨️',
+            ':no_pedestrians:': '🚷',
+            ':do_not_litter:': '🚯',
+            ':no_bicycles:': '🚳',
+            ':non-potable_water:': '🚱',
+            ':underage:': '🔞',
+            ':no_mobile_phones:': '📵',
+            ':exclamation:': '❗',
+            ':grey_exclamation:': '❕',
+            ':question:': '❓',
+            ':grey_question:': '❔',
+            ':bangbang:': '‼️',
+            ':interrobang:': '⁉️',
+            ':low_brightness:': '🔅',
+            ':high_brightness:': '🔆',
+            ':trident:': '🔱',
+            ':fleur_de_lis:': '⚜️',
+            ':part_alternation_mark:': '〽️',
+            ':copyright:': '©️',
+            ':registered:': '®️',
+            ':tm:': '™️'
+        };
+        
+        // Enhanced cursor tracking
+        this.currentMouseX = 0;
+        this.currentMouseY = 0;
+        this.cursorInterpolationFrame = null;
         
         this.initializeElements();
         this.attachEventListeners();
         this.initializeFaviconManager();
         this.loadSavedSettings();
         this.loadSavedAccount();
-        this.setupClickMeModalListeners();
-        this.processChangelogMarkdown();
         
-        // set random default color
-        this.setRandomDefaultColor();
-    }
-    
-    // generate a random hex color
-    generateRandomColor() {
-        const letters = '0123456789ABCDEF';
-        let color = '#';
-        for (let i = 0; i < 6; i++) {
-            color += letters[Math.floor(Math.random() * 16)];
-        }
-        return color;
-    }
-    
-    // set random default color on page load
-    setRandomDefaultColor() {
-        const randomColor = this.generateRandomColor();
-        this.color = randomColor;
-        if (this.colorPicker) {
-            this.colorPicker.value = randomColor;
-        }
+        // Set initial auto scroll button state
+        setTimeout(() => {
+            this.updateAutoScrollButton();
+        }, 100);
+        
+        // Global click handler for modal management
+        document.addEventListener('click', (e) => {
+            // Close modal if clicking outside of it
+            if (e.target.closest('.message-menu-modal') && !e.target.closest('.message-menu-content')) {
+                this.closeMessageModal();
+            }
+        });
     }
     
     initializeElements() {
@@ -504,201 +1088,64 @@ class ChatApp {
     }
     
     loadSavedAccount() {
-        // check for new localStorage format: username, display, color, settings
-        const savedUsername = localStorage.getItem('username');
-        const savedDisplay = localStorage.getItem('display');
-        const savedColor = localStorage.getItem('color');
-        const savedSettings = localStorage.getItem('settings');
-        
-        // check if we have old format data (like 'userColor', 'userWebsite', etc.)
-        const hasOldFormat = localStorage.getItem('userColor') || 
-                            localStorage.getItem('userWebsite') || 
-                            localStorage.getItem('displayName');
-        
-        if (hasOldFormat) {
-            // clear all localStorage and refresh
-            console.log('detected old localStorage format, clearing and refreshing');
-            localStorage.clear();
-            window.location.reload();
-            return;
-        }
-        
-        // if we have complete new format data, load it
-        if (savedUsername && savedDisplay && savedColor) {
-            this.username = savedUsername;
-            this.displayName = savedDisplay;
-            this.color = savedColor;
-            this.isRegistered = true;
-            
-            // update UI elements
-            if (this.usernameInput) this.usernameInput.value = savedUsername;
-            if (this.displayNameInput) this.displayNameInput.value = savedDisplay;
-            if (this.colorPicker) this.colorPicker.value = savedColor;
-            
-            // enable join button
-            if (this.joinButton) this.joinButton.disabled = false;
-            
-            console.log('loaded saved account:', { username: savedUsername, display: savedDisplay, color: savedColor });
-        } else {
-            // no complete data, user needs to register
-            console.log('no complete account data found, user needs to register');
+        const savedAccount = localStorage.getItem('chatAccount');
+        if (savedAccount) {
+            try {
+                const account = JSON.parse(savedAccount);
+                this.usernameInput.value = account.username || '';
+                this.colorPicker.value = account.color || '#ff6b6b';
+                this.userWebsite = account.website || ''; // Load website
+                
+                // Auto-join if username exists
+                if (account.username && account.username.trim()) {
+                    setTimeout(() => {
+                        this.joinChat();
+                    }, 100);
+                }
+            } catch (error) {
+                console.error('Error loading saved account:', error);
+            }
         }
     }
     
     saveAccount() {
-        localStorage.setItem('username', this.username);
-        localStorage.setItem('display', this.displayName);
-        localStorage.setItem('color', this.color);
-        console.log('saved account data');
-    }
-    
-    // check username availability with server
-    checkUsername(username) {
-        if (this.usernameCheckTimeout) {
-            clearTimeout(this.usernameCheckTimeout);
-        }
-        
-        this.usernameCheckTimeout = setTimeout(() => {
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({
-                    type: 'checkUsername',
-                    username: username
-                }));
-            }
-        }, 300); // debounce for 300ms
-    }
-    
-    // handle username validation response from server
-    handleUsernameCheck(data) {
-        const { username, isValid, isTaken, error } = data;
-        const statusDiv = document.getElementById('usernameStatus');
-        
-        if (!statusDiv) return;
-        
-        if (error) {
-            statusDiv.textContent = error;
-            statusDiv.className = 'username-status error';
-            this.isUsernameValid = false;
-            this.isUsernameTaken = false;
-        } else if (isValid && !isTaken) {
-            statusDiv.textContent = 'username available ✓';
-            statusDiv.className = 'username-status success';
-            this.isUsernameValid = true;
-            this.isUsernameTaken = false;
-        } else if (isTaken) {
-            statusDiv.textContent = 'username already taken';
-            statusDiv.className = 'username-status error';
-            this.isUsernameValid = false;
-            this.isUsernameTaken = true;
-        }
-        
-        this.updateJoinButtonState();
-    }
-    
-    // handle registration response from server
-    handleRegistrationResponse(data) {
-        if (data.type === 'registrationSuccess') {
-            const { userData } = data;
-            this.username = userData.username;
-            this.displayName = userData.display;
-            this.color = userData.color;
-            this.isRegistered = true;
-            
-            // save to localStorage
-            this.saveAccount();
-            
-            // proceed to join chat
-            this.joinChat();
-        } else if (data.type === 'registrationError') {
-            alert('registration failed: ' + data.error);
-            if (this.joinButton) this.joinButton.disabled = false;
-        }
-    }
-    
-    // handle user data restoration from server
-    handleUserDataRestore(data) {
-        const { userData } = data;
-        
-        // restore user data to localStorage
-        localStorage.setItem('username', userData.username);
-        localStorage.setItem('display', userData.display);
-        localStorage.setItem('color', userData.color);
-        
-        // update app state
-        this.username = userData.username;
-        this.displayName = userData.display;
-        this.color = userData.color;
-        this.isRegistered = true;
-        
-        // update UI
-        if (this.usernameInput) this.usernameInput.value = userData.username;
-        if (this.displayNameInput) this.displayNameInput.value = userData.display;
-        if (this.colorPicker) this.colorPicker.value = userData.color;
-        if (this.joinButton) this.joinButton.disabled = false;
-        
-        console.log('restored user data from server:', userData);
-    }
-    
-    // update join button state based on form validity
-    updateJoinButtonState() {
-        const displayName = this.displayNameInput?.value?.trim();
-        const username = this.usernameInput?.value?.trim();
-        
-        const isFormValid = displayName && 
-                          displayName.length > 0 && 
-                          username && 
-                          this.isUsernameValid && 
-                          !this.isUsernameTaken;
-        
-        if (this.joinButton) {
-            this.joinButton.disabled = !isFormValid;
-        }
+        const account = {
+            username: this.usernameInput.value.trim(),
+            color: this.colorPicker.value,
+            website: this.userWebsite || '' // Save website
+        };
+        localStorage.setItem('chatAccount', JSON.stringify(account));
     }
     
     joinChat() {
-        // if not registered, try to register first
-        if (!this.isRegistered) {
-            const displayName = this.displayNameInput?.value?.trim();
-            const username = this.usernameInput?.value?.trim();
-            const color = this.colorPicker?.value || this.generateRandomColor();
-            
-            if (!displayName || !username || !this.isUsernameValid || this.isUsernameTaken) {
-                alert('please complete the registration form properly');
-                return;
-            }
-            
-            // disable join button during registration
-            if (this.joinButton) this.joinButton.disabled = true;
-            
-            // send registration request
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({
-                    type: 'register',
-                    username: username,
-                    displayName: displayName,
-                    color: color
-                }));
-            } else {
-                alert('not connected to server, please refresh and try again');
-                if (this.joinButton) this.joinButton.disabled = false;
-            }
+        const username = this.usernameInput.value.trim();
+        if (!username || username.length > 24) {
+            alert('Please enter a username (1-24 characters)');
             return;
         }
         
-        // already registered, proceed to join
-        this.showChatScreen();
+        this.username = username;
+        this.userColor = this.colorPicker.value;
+        
+        // Save account for next time
+        this.saveAccount();
+        
+        // Request notification permission
+        this.requestNotificationPermission();
+        
         this.connectWebSocket();
+        this.showChatScreen();
     }
     
     connectWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}`;
         
-        this.ws = new WebSocket(wsUrl);
+        this.socket = new WebSocket(wsUrl);
         
-        this.ws.onopen = () => {
+        this.socket.onopen = () => {
             console.log('Connected to chat server');
-            this.ws.send(JSON.stringify({
+            this.socket.send(JSON.stringify({
                 type: 'join',
                 username: this.username,
                 color: this.userColor,
@@ -706,17 +1153,17 @@ class ChatApp {
             }));
         };
         
-        this.ws.onmessage = (event) => {
+        this.socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             this.handleMessage(data);
         };
         
-        this.ws.onclose = () => {
+        this.socket.onclose = () => {
             console.log('Disconnected from chat server');
             this.showSystemMessage('Disconnected from server. Please refresh to reconnect.');
         };
         
-        this.ws.onerror = (error) => {
+        this.socket.onerror = (error) => {
             console.error('WebSocket error:', error);
             this.showSystemMessage('Connection error. Please refresh to try again.');
         };
@@ -902,7 +1349,7 @@ class ChatApp {
         }
 
         console.log('Message data being sent:', messageData);
-        this.ws.send(JSON.stringify(messageData));
+        this.socket.send(JSON.stringify(messageData));
         
         // Record message timestamp for spam detection
         this.recordMessageTimestamp();
@@ -910,12 +1357,17 @@ class ChatApp {
         // Clear reply and input
         this.clearReply();
         this.chatInput.value = '';
+        
+        // Reset textarea height after clearing content
+        this.chatInput.style.height = 'auto';
+        this.chatInput.style.height = '40px'; // Reset to min-height
+        this.chatInput.style.overflowY = 'hidden';
     }
     
     handleTyping() {
         if (!this.isTyping) {
             this.isTyping = true;
-            this.ws.send(JSON.stringify({
+            this.socket.send(JSON.stringify({
                 type: 'typing',
                 isTyping: true
             }));
@@ -943,7 +1395,7 @@ class ChatApp {
     handleTypingStop() {
         if (this.isTyping) {
             this.isTyping = false;
-            this.ws.send(JSON.stringify({
+            this.socket.send(JSON.stringify({
                 type: 'typing',
                 isTyping: false
             }));
@@ -1136,12 +1588,21 @@ class ChatApp {
         
         const contentSpan = document.createElement('span');
         contentSpan.className = 'message-content';
+        
+        // Check if message contains line breaks for visual separator
+        const hasLineBreaks = data.content.includes('\n');
+        if (hasLineBreaks) {
+            contentSpan.classList.add('has-line-breaks');
+        }
+        
         // Process emojis, markdown, censor swear words, and process mentions
-        const processedContent = this.processEmojis(data.content);
+        // First replace line breaks with <br> tags for proper display
+        const lineBreakContent = data.content.replace(/\n/g, '<br>');
+        const processedContent = this.processEmojis(lineBreakContent);
         const markdownContent = this.processMarkdown(processedContent);
         const censoredContent = this.censorSwearWords(markdownContent);
         const mentionedContent = this.processMentions(censoredContent);
-        // Use innerHTML to render emojis, markdown, and mentions properly
+        // Use innerHTML to render emojis, markdown, mentions, and line breaks properly
         contentSpan.innerHTML = mentionedContent;
         contentSpan.style.color = data.color;
         
@@ -1359,9 +1820,9 @@ class ChatApp {
         this.messageElements.clear();
         
         // Disconnect socket
-        if (this.ws) {
-            this.ws.close();
-            this.ws = null;
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
         }
         
         // Clear form and reset state
@@ -1498,8 +1959,8 @@ class ChatApp {
         this.saveAccount();
         
         // Send update to server
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
                 type: 'updateUser',
                 username: newUsername,
                 color: this.userColor
@@ -1516,8 +1977,8 @@ class ChatApp {
         this.saveAccount();
         
         // Send update to server
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
                 type: 'updateUser',
                 username: this.username,
                 color: newColor
@@ -1631,8 +2092,8 @@ class ChatApp {
         localStorage.setItem('chatAccount', JSON.stringify(chatAccount));
         
         // Send update to server
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
                 type: 'updateUser',
                 username: newUsername,
                 color: newColor,
@@ -1654,8 +2115,8 @@ class ChatApp {
     handleMouseMove(e) {
         // Only track cursor when in chat and connected
         if (this.loginScreen.classList.contains('hidden') && 
-            this.ws && 
-            this.ws.readyState === WebSocket.OPEN) {
+            this.socket && 
+            this.socket.readyState === WebSocket.OPEN) {
             
             // Store current mouse position for interpolation
             this.currentMouseX = e.clientX;
@@ -1672,7 +2133,7 @@ class ChatApp {
                 const adjustedX = e.clientX - rect.left + window.scrollX;
                 const adjustedY = e.clientY - rect.top + window.scrollY;
                 
-                this.ws.send(JSON.stringify({
+                this.socket.send(JSON.stringify({
                     type: 'cursor',
                     x: adjustedX,
                     y: adjustedY,
@@ -2185,17 +2646,17 @@ class ChatApp {
     
     updateMessage(messageId, newContent, messageDiv) {
         console.log('🔧 updateMessage called:', { messageId, newContent });
-        console.log('🔧 Socket state:', this.ws?.readyState);
+        console.log('🔧 Socket state:', this.socket?.readyState);
         console.log('🔧 WebSocket.OPEN:', WebSocket.OPEN);
         
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             const message = {
                 type: 'editMessage',
                 messageId: messageId,
                 newContent: newContent
             };
             console.log('🔧 Sending edit message:', message);
-            this.ws.send(JSON.stringify(message));
+            this.socket.send(JSON.stringify(message));
         } else {
             console.error('🔧 Socket not ready or not connected');
         }
@@ -2207,15 +2668,15 @@ class ChatApp {
         
         if (confirm('Are you sure you want to delete this message?')) {
             console.log('🔧 User confirmed deletion');
-            console.log('🔧 Socket state:', this.ws?.readyState);
+            console.log('🔧 Socket state:', this.socket?.readyState);
             
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
                 const message = {
                     type: 'deleteMessage',
                     messageId: data.id
                 };
                 console.log('🔧 Sending delete message:', message);
-                this.ws.send(JSON.stringify(message));
+                this.socket.send(JSON.stringify(message));
             } else {
                 console.error('🔧 Socket not ready or not connected');
             }
@@ -3335,7 +3796,7 @@ class ChatApp {
         }
 
         // Send system message command to server
-        this.ws.send(JSON.stringify({
+        this.socket.send(JSON.stringify({
             type: 'systemMessage',
             message: message
         }));
@@ -3352,7 +3813,7 @@ class ChatApp {
         const [, username, message] = match;
         
         // Send fake message command to server
-        this.ws.send(JSON.stringify({
+        this.socket.send(JSON.stringify({
             type: 'fakeMessage',
             username: username,
             message: message
@@ -3370,7 +3831,7 @@ class ChatApp {
         const [, color, username] = match;
         
         // Send fake connect command to server
-        this.ws.send(JSON.stringify({
+        this.socket.send(JSON.stringify({
             type: 'fakeConnect',
             username: username,
             color: color
@@ -3388,7 +3849,7 @@ class ChatApp {
         const [, username] = match;
         
         // Send fake disconnect command to server
-        this.ws.send(JSON.stringify({
+        this.socket.send(JSON.stringify({
             type: 'fakeDisconnect',
             username: username
         }));
@@ -3756,15 +4217,51 @@ class ChatApp {
                     return;
             }
         } else if (e.key === 'Enter') {
-            e.preventDefault();
-            this.sendMessage();
+            if (e.shiftKey) {
+                // Allow Shift+Enter for line breaks
+                this.autoResizeTextarea();
+                return;
+            } else {
+                // Regular Enter sends the message
+                e.preventDefault();
+                this.sendMessage();
+            }
         }
+    }
+
+    autoResizeTextarea() {
+        // Use setTimeout to allow the textarea to update first
+        setTimeout(() => {
+            const textarea = this.chatInput;
+            
+            // Reset height to auto to get the scroll height
+            textarea.style.height = 'auto';
+            
+            // Calculate the new height based on content
+            const scrollHeight = textarea.scrollHeight;
+            const maxHeight = 120; // Match CSS max-height
+            const minHeight = 40;  // Match CSS min-height
+            
+            // Set the height, respecting min and max limits
+            const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
+            textarea.style.height = newHeight + 'px';
+            
+            // Show scrollbar if content exceeds max height
+            if (scrollHeight > maxHeight) {
+                textarea.style.overflowY = 'auto';
+            } else {
+                textarea.style.overflowY = 'hidden';
+            }
+        }, 0);
     }
 
     handleChatInputChange(e) {
         const input = e.target;
         const value = input.value;
         const cursorPos = input.selectionStart;
+        
+        // Auto-resize the textarea as content changes
+        this.autoResizeTextarea();
         
         // Check for @ mentions
         this.checkForMentions(value, cursorPos);
@@ -4077,7 +4574,7 @@ class ChatApp {
                     
                     <div class="dm-input-container">
                         <button class="dm-attach-button" title="Attach files or paste from clipboard">📎</button>
-                        <input type="text" class="dm-chat-input" placeholder="Type a direct message..." maxlength="2000">
+                        <textarea class="dm-chat-input" rows="1" placeholder="Type a direct message... (Shift+Enter for new line, Enter to send)" maxlength="5000"></textarea>
                         <button class="dm-send-button" title="Send message">→</button>
                     </div>
                 </div>
@@ -4110,6 +4607,8 @@ class ChatApp {
             if (content || attachments.length > 0) {
                 this.sendDMMessage(user.username, content, attachments);
                 dmInput.value = '';
+                // Reset textarea height
+                dmInput.style.height = 'auto';
                 this.clearDMAttachments();
             }
         };
@@ -4117,9 +4616,21 @@ class ChatApp {
         sendBtn.addEventListener('click', sendMessage);
         dmInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
-                e.preventDefault();
-                sendMessage();
+                if (e.shiftKey) {
+                    // Allow Shift+Enter for line breaks
+                    this.autoResizeDMTextarea(dmInput);
+                    return;
+                } else {
+                    // Regular Enter sends the message
+                    e.preventDefault();
+                    sendMessage();
+                }
             }
+        });
+        
+        // Auto-resize DM textarea on input
+        dmInput.addEventListener('input', () => {
+            this.autoResizeDMTextarea(dmInput);
         });
         
         // File attachment functionality
@@ -4400,8 +4911,8 @@ class ChatApp {
     }
     
     sendDMMessage(targetUsername, content, attachments = []) {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
                 type: 'dmMessage',
                 targetUsername: targetUsername,
                 content: content,
@@ -4411,15 +4922,24 @@ class ChatApp {
     }
     
     requestDMHistory(targetUsername) {
-        console.log('Requesting DM history for:', targetUsername); // Add debugging
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        console.log('Requesting DM history for:', targetUsername);
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            console.log('WebSocket is open, sending getDMHistory request');
+            this.socket.send(JSON.stringify({
                 type: 'getDMHistory',
                 targetUsername: targetUsername
             }));
+            
+            // Set a timeout to handle cases where the server doesn't respond
+            setTimeout(() => {
+                const dmChatHistory = document.getElementById('dmChatHistory');
+                if (dmChatHistory && dmChatHistory.innerHTML.includes('Loading conversation...')) {
+                    console.log('DM history request timed out, showing empty conversation');
+                    dmChatHistory.innerHTML = '<div class="dm-empty">Start a conversation! 💬</div>';
+                }
+            }, 5000); // 5 second timeout
         } else {
-            console.log('WebSocket not ready, clearing loading state'); // Add debugging
-            // If websocket is not ready, clear loading state and show empty conversation
+            console.log('WebSocket not ready, clearing loading state');
             const dmChatHistory = document.getElementById('dmChatHistory');
             if (dmChatHistory) {
                 dmChatHistory.innerHTML = '<div class="dm-empty">Start a conversation! 💬</div>';
@@ -4566,7 +5086,14 @@ class ChatApp {
     }
     
     handleDMHistory(data) {
-        console.log('Received DM history:', data); // Add debugging
+        console.log('Received DM history:', data);
+        
+        // Validate the data structure
+        if (!data || !data.targetUsername || !Array.isArray(data.messages)) {
+            console.error('Invalid DM history data received:', data);
+            this.showDMError('Invalid conversation data received');
+            return;
+        }
         
         // Generate conversation key for this DM history
         const conversationKey = this.getDMConversationKey(this.username, data.targetUsername);
@@ -4577,23 +5104,35 @@ class ChatApp {
         // If the DM modal is open for this user, display the history
         if (this.currentDMUser && this.currentDMUser.username === data.targetUsername) {
             this.displayDMHistory(data.messages);
+        } else {
+            console.log('DM modal not open for this user, just storing history');
         }
     }
     
     displayDMHistory(messages) {
-        console.log('Displaying DM history:', messages); // Add debugging
+        console.log('Displaying DM history:', messages);
         const dmChatHistory = document.getElementById('dmChatHistory');
-        if (!dmChatHistory) return;
+        if (!dmChatHistory) {
+            console.error('DM chat history element not found');
+            return;
+        }
         
+        // Clear the loading state
         dmChatHistory.innerHTML = '';
         
-        if (messages.length === 0) {
+        if (!messages || messages.length === 0) {
+            console.log('No messages to display, showing empty state');
             dmChatHistory.innerHTML = '<div class="dm-empty">Start a conversation! 💬</div>';
             return;
         }
         
-        messages.forEach(message => {
-            this.displayDMMessage(message, false); // false = don't scroll yet
+        console.log(`Displaying ${messages.length} DM messages`);
+        messages.forEach((message, index) => {
+            try {
+                this.displayDMMessage(message, false); // false = don't scroll yet
+            } catch (error) {
+                console.error(`Error displaying message ${index}:`, error, message);
+            }
         });
         
         // Scroll to bottom after loading all messages
@@ -4651,6 +5190,11 @@ class ChatApp {
             const contentDiv = document.createElement('div');
             contentDiv.className = 'dm-message-content';
             
+            // Check for line breaks and add class
+            if (data.content.includes('\n')) {
+                contentDiv.classList.add('has-line-breaks');
+            }
+            
             // Process content with markdown, emojis, and mentions
             const processedContent = this.processEmojis(data.content);
             const markdownContent = this.processMarkdown(processedContent);
@@ -4698,9 +5242,13 @@ class ChatApp {
     }
     
     showDMError(message) {
+        console.log('DM Error:', message);
         // Show error in the DM modal if it's open
         const dmChatHistory = document.getElementById('dmChatHistory');
         if (dmChatHistory) {
+            // Clear any loading state first
+            dmChatHistory.innerHTML = '';
+            
             const errorDiv = document.createElement('div');
             errorDiv.className = 'dm-error';
             errorDiv.textContent = `Error: ${message}`;
@@ -4890,7 +5438,7 @@ class ChatApp {
 
     handleClearChatCommand() {
         // send clear chat command to server so it clears for everyone
-        this.ws.send(JSON.stringify({
+        this.socket.send(JSON.stringify({
             type: 'clearChat'
         }));
     }
@@ -4955,6 +5503,11 @@ class ChatApp {
             // If attachment not found, return the original ID
             return match;
         });
+    }
+
+    autoResizeDMTextarea(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = textarea.scrollHeight + 'px';
     }
 }
 
