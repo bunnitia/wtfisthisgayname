@@ -3538,20 +3538,20 @@ class ChatApp {
         const now = Date.now();
         this.messageTimestamps.push(now);
         
-        // Clean up old timestamps (older than 45 seconds)
-        const cutoff = now - 45000; // 45 seconds
+        // Clean up old timestamps (older than 15 seconds)
+        const cutoff = now - 15000; // 15 seconds
         this.messageTimestamps = this.messageTimestamps.filter(timestamp => timestamp > cutoff);
     }
     
     checkSpam() {
         const now = Date.now();
-        const cutoff = now - 45000; // 45 seconds
+        const cutoff = now - 15000; // 15 seconds
         
         // Clean up old timestamps
         this.messageTimestamps = this.messageTimestamps.filter(timestamp => timestamp > cutoff);
         
-        // Check if user has sent 64 or more messages in the last 45 seconds
-        if (this.messageTimestamps.length >= 64) {
+        // Check if user has sent 14 or more messages in the last 15 seconds
+        if (this.messageTimestamps.length >= 14) {
             this.muteUser();
             return true;
         }
@@ -3774,7 +3774,10 @@ class ChatApp {
                     this.handleDisconnectCommand(command);
                     break;
                 case '/clearchat':
-                    this.handleClearChatCommand();
+                    this.handleLocalClearChatCommand();
+                    break;
+                case '/serverclearchat':
+                    this.handleServerClearChatCommand();
                     break;
                 case '/unspoilerimagesforeveryone':
                     this.handleUnspoilerImagesCommand();
@@ -5437,10 +5440,14 @@ class ChatApp {
     }
 
     handleClearChatCommand() {
-        // send clear chat command to server so it clears for everyone
-        this.socket.send(JSON.stringify({
-            type: 'clearChat'
-        }));
+        // Clear chat locally only (for this user)
+        const chatHistory = document.getElementById('chatHistory');
+        if (chatHistory) {
+            chatHistory.innerHTML = '';
+        }
+        
+        // Show local system message
+        this.showSystemMessage('Chat cleared locally (only for you)');
     }
 
     handleUnspoilerImagesCommand() {
@@ -5508,6 +5515,24 @@ class ChatApp {
     autoResizeDMTextarea(textarea) {
         textarea.style.height = 'auto';
         textarea.style.height = textarea.scrollHeight + 'px';
+    }
+
+    handleLocalClearChatCommand() {
+        // Clear chat locally only (for this user)
+        const chatHistory = document.getElementById('chatHistory');
+        if (chatHistory) {
+            chatHistory.innerHTML = '';
+        }
+        
+        // Show local system message
+        this.showSystemMessage('Chat cleared locally (only for you)');
+    }
+
+    handleServerClearChatCommand() {
+        // Send server clear chat command so it clears for everyone
+        this.socket.send(JSON.stringify({
+            type: 'serverClearChat'
+        }));
     }
 }
 
