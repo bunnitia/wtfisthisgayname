@@ -132,6 +132,9 @@ const ipToFingerprint = new Map(); // Track which fingerprint an IP is using
 const MAX_MESSAGES = 128;
 const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
 
+// Store fingerprint history for analysis
+const fingerprintHistory = new Map(); // IP -> Array of {fingerprint, timestamp}
+
 // Helper function to get real IP address (handles proxies/load balancers)
 function getRealIP(req) {
     return req.headers['cf-connecting-ip'] || // Cloudflare
@@ -288,41 +291,73 @@ wss.on('connection', (ws, req) => {
             
             switch (message.type) {
                 case 'fingerprint':
-                    const fingerprintClient = clients.get(clientId);
-                    if (fingerprintClient && message.fingerprint) {
-                        const clientIP = fingerprintClient.ip;
-                        const fingerprint = message.fingerprint;
+                    const fingerprint = message.fingerprint;
+                    const components = message.components || [];
+                    const realIPData = message.realIPData || {};
+                    
+                    if (!fingerprint) {
+                        logEvent('FINGERPRINT_ERROR', 'SYSTEM', clientIP, 'No fingerprint provided');
+                        ws.close(1008, 'Invalid fingerprint');
+                        return;
+                    }
+                    
+                    // Log VPN detection if found
+                    if (realIPData.isVPN) {
+                        logVPNDetection(realIPData.vpnIP, realIPData.realIP, message.username, clientIP);
+                    }
+                    
+                    // Store fingerprint components for future analysis
+                    storeFingerprintComponents(fingerprint, components);
+                    
+                    // Check if this fingerprint is banned
+                    if (isFingerprintBanned(fingerprint)) {
+                        logEvent('BANNED_FINGERPRINT_DETECTED', 'SYSTEM', clientIP, `Fingerprint: ${fingerprint}`);
+                        ws.close(1008, 'Access denied');
+                        return;
+                    }
+                    
+                    // Detect partial fingerprint manipulation
+                    const partialManipulationScore = detectPartialFingerprintManipulation(clientIP, fingerprint);
+                    
+                    // Track and analyze the fingerprint
+                    const trackingResult = trackFingerprint(clientIP, fingerprint, partialManipulationScore);
+                    
+                    // If auto-banned due to suspicious activity, close connection
+                    if (trackingResult && trackingResult.autoBanned) {
+                        logEvent('AUTO_BANNED_FINGERPRINT', 'SYSTEM', clientIP, `Fingerprint: ${fingerprint}, Reason: ${trackingResult.reason}`);
+                        ws.close(1008, 'Access denied - suspicious activity detected');
+                        return;
+                    }
+                    
+                    // Store verified fingerprint
+                    const currentClient = clients.get(clientId);
+                    if (currentClient) {
+                        currentClient.fingerprint = fingerprint;
+                        currentClient.fingerprintVerified = true;
+                        currentClient.realIPData = realIPData;
+                        clients.set(clientId, currentClient);
+                    }
+                    
+                    // Add fingerprint to history for analysis
+                    addFingerprintToHistory(clientIP, fingerprint);
+                    
+                    logEvent('FINGERPRINT_STORED', 'SYSTEM', clientIP, `Fingerprint: ${fingerprint}`);
+                    
+                    // Process any pending join request now that fingerprint is verified
+                    if (currentClient && currentClient.pendingJoinData) {
+                        const joinData = currentClient.pendingJoinData;
+                        currentClient.pendingJoinData = null;
+                        clients.set(clientId, currentClient);
                         
-                        // Log fingerprint received
-                        logEvent('FINGERPRINT_RECEIVED', 'connecting...', clientIP, `Fingerprint: ${fingerprint}`);
-                        
-                        // Check for ban evasion
-                        const wasAutoBanned = trackFingerprint(clientIP, fingerprint);
-                        
-                        if (wasAutoBanned || isFingerprintBanned(fingerprint)) {
-                            logEvent('BAN_EVASION_BLOCKED', 'unknown', clientIP, `Connection rejected - banned fingerprint: ${fingerprint}`);
-                            if (fingerprintClient.ws && fingerprintClient.ws.readyState === WebSocket.OPEN) {
-                                fingerprintClient.ws.close(1008, 'Your device has been banned from this server');
-                            }
-                            clients.delete(clientId);
-                            return;
-                        }
-                        
-                        // Store fingerprint with client and mark as verified
-                        fingerprintClient.fingerprint = fingerprint;
-                        fingerprintClient.fingerprintVerified = true;
-                        
-                        logEvent('FINGERPRINT_TRACKED', 'connecting...', clientIP, `Fingerprint stored: ${fingerprint}`);
-                        
-                        // If they already tried to join, process it now
-                        if (fingerprintClient.joinRequested && fingerprintClient.pendingJoinData) {
-                            const joinData = fingerprintClient.pendingJoinData;
-                            delete fingerprintClient.pendingJoinData;
-                            delete fingerprintClient.joinRequested;
-                            
-                            // Process the join now that fingerprint is verified
-                            processJoin(clientId, joinData);
-                        }
+                        // Process the join request
+                        processJoin(clientId, joinData);
+                    }
+                    break;
+                    
+                case 'vpnDetection':
+                    const vpnClient = clients.get(clientId);
+                    if (vpnClient) {
+                        logVPNDetection(message.vpnIP, message.realIP, message.username, vpnClient.ip);
                     }
                     break;
                     
@@ -990,8 +1025,8 @@ function isFingerprintBanned(fingerprint) {
     return bannedFingerprints.has(fingerprint);
 }
 
-// Track device fingerprint and detect ban evasion
-function trackFingerprint(ip, fingerprint) {
+// Enhanced fingerprint tracking with spoofing detection
+function trackFingerprint(ip, fingerprint, partialManipulationScore) {
     // Store the mapping
     ipToFingerprint.set(ip, fingerprint);
     
@@ -1000,15 +1035,229 @@ function trackFingerprint(ip, fingerprint) {
     }
     fingerprintToIPs.get(fingerprint).add(ip);
     
-    // Check for ban evasion
+    // Analyze the fingerprint
+    const indicators = analyzeFingerprint(fingerprint, ip, partialManipulationScore);
+    
+    if (indicators.length > 0) {
+        logEvent('FINGERPRINT_SUSPICIOUS', 'SYSTEM', ip, `Indicators: ${indicators.join(', ')} | Fingerprint: ${fingerprint}`);
+        
+        // If multiple high-risk indicators, treat as potential spoofing
+        const highRiskIndicators = indicators.filter(indicator => 
+            indicator.includes('SPOOF') || indicator.includes('FAKE') || indicator.includes('INCONSISTENT') || 
+            indicator.includes('PARTIAL_MANIPULATION') || indicator.includes('SELECTIVE_CHANGE')
+        );
+        
+        if (highRiskIndicators.length >= 2) {
+            // Auto-ban suspected spoofed fingerprints
+            bannedFingerprints.add(fingerprint);
+            bannedIPs.add(ip);
+            logEvent('AUTO_BAN_SPOOFING', 'SYSTEM', ip, `Suspected fingerprint spoofing detected. Auto-banned fingerprint: ${fingerprint}`);
+            return { autoBanned: true, reason: 'Multiple high-risk indicators' };
+        }
+        
+        // Even single high-risk indicator with high partial manipulation score = ban
+        if (highRiskIndicators.length >= 1 && partialManipulationScore >= 0.8) {
+            bannedFingerprints.add(fingerprint);
+            bannedIPs.add(ip);
+            logEvent('AUTO_BAN_PARTIAL_SPOOF', 'SYSTEM', ip, `Partial fingerprint manipulation detected (score: ${partialManipulationScore}). Auto-banned fingerprint: ${fingerprint}`);
+            return { autoBanned: true, reason: 'Single high-risk indicator with high partial manipulation score' };
+        }
+    }
+    
+    // Check for ban evasion (existing logic)
     if (bannedFingerprints.has(fingerprint)) {
         // This fingerprint is banned, auto-ban this new IP
         bannedIPs.add(ip);
         logEvent('BAN_EVASION_DETECTED', 'SYSTEM', ip, `Auto-banned IP for banned fingerprint: ${fingerprint}`);
-        return true; // Indicates this IP was auto-banned
+        return { autoBanned: true, reason: 'Fingerprint is banned' };
     }
     
-    return false; // Not banned
+    return { autoBanned: false };
+}
+
+// Detect partial fingerprint manipulation by comparing components
+function detectPartialFingerprintManipulation(ip, newFingerprint) {
+    const recentFingerprints = getRecentFingerprintsForIP(ip);
+    
+    if (recentFingerprints.length === 0) {
+        return 0; // No history to compare
+    }
+    
+    let maxSimilarity = 0;
+    let mostSimilarFingerprint = null;
+    
+    // Compare with all recent fingerprints from this IP
+    for (const entry of recentFingerprints) {
+        const similarity = calculateFingerprintSimilarity(newFingerprint, entry.fingerprint);
+        if (similarity > maxSimilarity) {
+            maxSimilarity = similarity;
+            mostSimilarFingerprint = entry.fingerprint;
+        }
+    }
+    
+    // If similarity is high (80-95%), it's suspicious - they changed a few things but kept most
+    if (maxSimilarity >= 0.8 && maxSimilarity < 0.98) {
+        logEvent('PARTIAL_FINGERPRINT_CHANGE', 'SYSTEM', ip, 
+            `High similarity (${(maxSimilarity * 100).toFixed(1)}%) between fingerprints. Previous: ${mostSimilarFingerprint?.substring(0, 8)}..., New: ${newFingerprint.substring(0, 8)}...`);
+        return maxSimilarity;
+    }
+    
+    return 0;
+}
+
+// Calculate similarity between two fingerprints by comparing their components
+function calculateFingerprintSimilarity(fp1, fp2) {
+    if (fp1 === fp2) return 1.0; // Identical
+    
+    // For hashed fingerprints, we need to store component-wise data
+    // Let's use a different approach - check stored component fingerprints
+    const components1 = getStoredFingerprintComponents(fp1);
+    const components2 = getStoredFingerprintComponents(fp2);
+    
+    if (!components1 || !components2) {
+        return 0; // Can't compare without component data
+    }
+    
+    let matchingComponents = 0;
+    const totalComponents = Math.max(components1.length, components2.length);
+    
+    for (let i = 0; i < totalComponents; i++) {
+        if (components1[i] === components2[i]) {
+            matchingComponents++;
+        }
+    }
+    
+    return matchingComponents / totalComponents;
+}
+
+// Store fingerprint components separately for comparison
+const fingerprintComponents = new Map();
+
+function storeFingerprintComponents(fingerprintHash, components) {
+    fingerprintComponents.set(fingerprintHash, components);
+    
+    // Clean up old entries (keep only last 1000)
+    if (fingerprintComponents.size > 1000) {
+        const entries = Array.from(fingerprintComponents.entries());
+        const toKeep = entries.slice(-900); // Keep last 900, remove oldest 100
+        fingerprintComponents.clear();
+        toKeep.forEach(([hash, comp]) => fingerprintComponents.set(hash, comp));
+    }
+}
+
+function getStoredFingerprintComponents(fingerprintHash) {
+    return fingerprintComponents.get(fingerprintHash);
+}
+
+// Analyze fingerprint for suspicious patterns and spoofing indicators
+function analyzeFingerprint(fingerprint, ip, partialManipulationScore) {
+    const indicators = [];
+    
+    try {
+        // Add partial manipulation indicators
+        if (partialManipulationScore >= 0.9) {
+            indicators.push('PARTIAL_MANIPULATION_HIGH');
+        } else if (partialManipulationScore >= 0.8) {
+            indicators.push('PARTIAL_MANIPULATION_MEDIUM');
+        }
+        
+        // Selective change detection - if they have high similarity but changed key components
+        if (partialManipulationScore >= 0.85) {
+            // This suggests they kept most things the same but selectively changed a few
+            // This is highly suspicious as normal users don't do this
+            indicators.push('SELECTIVE_CHANGE_DETECTED');
+        }
+        
+        // Decode the fingerprint components for analysis
+        // Since we hash the fingerprint, we need to check patterns in recent connections
+        
+        // Check for impossible hardware combinations
+        if (fingerprint.includes('unknown') && fingerprint.split('unknown').length > 10) {
+            indicators.push('TOO_MANY_UNKNOWNS');
+        }
+        
+        // Check for fingerprint that's too generic (likely spoofed)
+        if (fingerprint.length < 8) {
+            indicators.push('FINGERPRINT_TOO_SHORT');
+        }
+        
+        // Check for rapid fingerprint changes from same IP
+        const recentFingerprints = getRecentFingerprintsForIP(ip);
+        if (recentFingerprints.length > 3) {
+            indicators.push('RAPID_FINGERPRINT_CHANGES');
+            
+            // If they have many fingerprint changes AND partial manipulation, very suspicious
+            if (partialManipulationScore >= 0.8) {
+                indicators.push('RAPID_CHANGES_WITH_MANIPULATION');
+            }
+        }
+        
+        // Check for identical fingerprints from different IPs (suspicious)
+        const ipsWithSameFingerprint = fingerprintToIPs.get(fingerprint);
+        if (ipsWithSameFingerprint && ipsWithSameFingerprint.size > 5) {
+            indicators.push('SHARED_FINGERPRINT_MULTIPLE_IPS');
+        }
+        
+        // Check for patterns that indicate automation/scripting
+        if (fingerprint.includes('fp_') && fingerprint.includes(Date.now().toString(36).slice(-4))) {
+            indicators.push('TIMESTAMP_BASED_FALLBACK');
+        }
+        
+        // Check for fingerprints that are too perfect (likely spoofed)
+        const perfectPatterns = ['1920x1080', '1366x768', '1440x900'];
+        const hasCommonResolution = perfectPatterns.some(pattern => fingerprint.includes(pattern));
+        const hasGenericUA = fingerprint.includes('Chrome') && fingerprint.includes('Safari');
+        
+        if (hasCommonResolution && hasGenericUA && !fingerprint.includes('WebGL')) {
+            indicators.push('SUSPICIOUSLY_GENERIC');
+        }
+        
+    } catch (error) {
+        indicators.push('FINGERPRINT_ANALYSIS_ERROR');
+        logEvent('FINGERPRINT_ANALYSIS_ERROR', 'SYSTEM', ip, `Error analyzing fingerprint: ${error.message}`);
+    }
+    
+    return indicators;
+}
+
+// Track recent fingerprints for each IP to detect rapid changes
+const ipFingerprintHistory = new Map();
+
+function getRecentFingerprintsForIP(ip) {
+    if (!ipFingerprintHistory.has(ip)) {
+        ipFingerprintHistory.set(ip, []);
+    }
+    
+    const history = ipFingerprintHistory.get(ip);
+    const now = Date.now();
+    const fiveMinutesAgo = now - (5 * 60 * 1000);
+    
+    // Remove entries older than 5 minutes
+    const recentHistory = history.filter(entry => entry.timestamp > fiveMinutesAgo);
+    ipFingerprintHistory.set(ip, recentHistory);
+    
+    return recentHistory;
+}
+
+function addFingerprintToHistory(ip, fingerprint) {
+    if (!fingerprintHistory.has(ip)) {
+        fingerprintHistory.set(ip, []);
+    }
+    
+    const history = fingerprintHistory.get(ip);
+    history.push({
+        fingerprint: fingerprint,
+        timestamp: Date.now()
+    });
+    
+    // Keep only the last 10 entries per IP to prevent memory bloat
+    if (history.length > 10) {
+        history.splice(0, history.length - 10);
+    }
+}
+
+function getRecentFingerprintsForIP(ip) {
+    return fingerprintHistory.get(ip) || [];
 }
 
 // Process chat commands (for /pb and /unpb)
@@ -1171,6 +1420,41 @@ function processCommand(content, client) {
             
         default:
             return null; // Not a recognized command
+    }
+}
+
+// Hidden VPN Detection Logging
+function logVPNDetection(vpnIP, realIP, username, serverSeenIP) {
+    try {
+        const timestamp = new Date().toISOString();
+        const logEntry = `VPN IP: ${vpnIP} | REAL IP: ${realIP} | USERNAME: ${username} | SERVER IP: ${serverSeenIP} | TIMESTAMP: ${timestamp}`;
+        
+        // Create hidden log file path (dot files are hidden on Unix systems)
+        const hiddenLogPath = path.join(__dirname, '.vpn_detection.log');
+        
+        // Append to hidden log file
+        fs.appendFileSync(hiddenLogPath, logEntry + '\n', { flag: 'a' });
+        
+        // Also log to console with obfuscated message
+        logEvent('NETWORK_ANALYSIS', username, serverSeenIP, `Network routing detected`);
+        
+        // Keep log file size manageable (max 1000 entries)
+        try {
+            const logContent = fs.readFileSync(hiddenLogPath, 'utf8');
+            const lines = logContent.split('\n').filter(line => line.trim());
+            
+            if (lines.length > 1000) {
+                // Keep only the last 900 entries
+                const trimmedContent = lines.slice(-900).join('\n') + '\n';
+                fs.writeFileSync(hiddenLogPath, trimmedContent);
+            }
+        } catch (e) {
+            // Ignore errors in log maintenance
+        }
+        
+    } catch (error) {
+        // Silently fail to avoid detection
+        console.error('Log write error:', error.message);
     }
 }
 

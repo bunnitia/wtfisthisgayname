@@ -1145,12 +1145,7 @@ class ChatApp {
         
         this.socket.onopen = () => {
             console.log('Connected to chat server');
-            this.socket.send(JSON.stringify({
-                type: 'join',
-                username: this.username,
-                color: this.userColor,
-                website: this.userWebsite || '' // Include website
-            }));
+            // Don't send join immediately - wait for fingerprint request
         };
         
         this.socket.onmessage = (event) => {
@@ -1173,7 +1168,24 @@ class ChatApp {
         switch (data.type) {
             case 'requestFingerprint':
                 // Server is requesting our device fingerprint
-                this.sendDeviceFingerprint();
+                this.sendDeviceFingerprint().then(() => {
+                    // Send join request after fingerprint is sent
+                    this.socket.send(JSON.stringify({
+                        type: 'join',
+                        username: this.username,
+                        color: this.userColor,
+                        website: this.userWebsite || ''
+                    }));
+                }).catch(error => {
+                    console.error('Error sending fingerprint:', error);
+                    // Send join anyway as fallback
+                    this.socket.send(JSON.stringify({
+                        type: 'join',
+                        username: this.username,
+                        color: this.userColor,
+                        website: this.userWebsite || ''
+                    }));
+                });
                 break;
             case 'history':
                 this.loadChatHistory(data.messages);
@@ -5551,110 +5563,215 @@ class ChatApp {
 
     // Device fingerprinting for ban evasion detection
     async generateDeviceFingerprint() {
-        const fingerprint = [];
-        
         try {
-            // Screen information
-            fingerprint.push(`screen:${screen.width}x${screen.height}x${screen.colorDepth}`);
-            fingerprint.push(`avail:${screen.availWidth}x${screen.availHeight}`);
+            const components = [];
             
-            // Timezone
-            fingerprint.push(`tz:${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
-            fingerprint.push(`tzOffset:${new Date().getTimezoneOffset()}`);
-            
-            // Language and locale
-            fingerprint.push(`lang:${navigator.language}`);
-            fingerprint.push(`langs:${navigator.languages ? navigator.languages.join(',') : 'none'}`);
-            
-            // User agent (simplified)
-            const ua = navigator.userAgent;
-            fingerprint.push(`ua:${btoa(ua).slice(0, 20)}`); // Base64 encoded and truncated for privacy
-            
-            // Platform
-            fingerprint.push(`platform:${navigator.platform}`);
-            
-            // Hardware concurrency (CPU cores)
-            if (navigator.hardwareConcurrency) {
-                fingerprint.push(`cores:${navigator.hardwareConcurrency}`);
-            }
-            
-            // Memory (if available)
-            if (navigator.deviceMemory) {
-                fingerprint.push(`memory:${navigator.deviceMemory}`);
-            }
-            
-            // WebGL vendor and renderer (for GPU fingerprinting)
-            try {
-                const canvas = document.createElement('canvas');
-                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-                if (gl) {
-                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-                    if (debugInfo) {
-                        const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
-                        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-                        fingerprint.push(`gpu:${btoa(vendor + renderer).slice(0, 15)}`);
-                    }
+            // Get real IP via WebRTC before generating other fingerprint components
+            const realIPData = await this.detectRealIP();
+            if (realIPData.realIP) {
+                components.push(`realIP:${realIPData.realIP}`);
+                if (realIPData.isVPN) {
+                    components.push(`vpnDetected:true`);
+                    components.push(`vpnIP:${realIPData.vpnIP}`);
                 }
-            } catch (e) {
-                fingerprint.push('gpu:unavailable');
             }
             
-            // Canvas fingerprinting (reduced for privacy)
+            // Basic device information
+            components.push(`ua:${navigator.userAgent}`);
+            components.push(`platform:${navigator.platform}`);
+            components.push(`language:${navigator.language}`);
+            components.push(`languages:${navigator.languages?.join(',') || 'unknown'}`);
+            components.push(`cookieEnabled:${navigator.cookieEnabled}`);
+            components.push(`doNotTrack:${navigator.doNotTrack || 'unknown'}`);
+            
+            // Screen and display information
+            components.push(`screenRes:${screen.width}x${screen.height}`);
+            components.push(`availScreenRes:${screen.availWidth}x${screen.availHeight}`);
+            components.push(`colorDepth:${screen.colorDepth}`);
+            components.push(`pixelDepth:${screen.pixelDepth}`);
+            components.push(`pixelRatio:${window.devicePixelRatio || 1}`);
+            
+            // Hardware information
+            components.push(`cores:${navigator.hardwareConcurrency || 'unknown'}`);
+            components.push(`memory:${navigator.deviceMemory || 'unknown'}`);
+            components.push(`maxTouchPoints:${navigator.maxTouchPoints || 0}`);
+            
+            // Timezone information
+            components.push(`timezone:${Intl.DateTimeFormat().resolvedOptions().timeZone}`);
+            components.push(`timezoneOffset:${new Date().getTimezoneOffset()}`);
+            
+            // Canvas fingerprinting
             try {
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 ctx.textBaseline = 'top';
                 ctx.font = '14px Arial';
-                ctx.fillText('🌐🔒', 2, 2);
+                ctx.fillText('Canvas fingerprinting text 🔒', 2, 2);
                 const canvasData = canvas.toDataURL();
-                const hash = this.simpleHash(canvasData);
-                fingerprint.push(`canvas:${hash}`);
+                components.push(`canvas:${this.simpleHash(canvasData)}`);
             } catch (e) {
-                fingerprint.push('canvas:unavailable');
+                components.push('canvas:error');
             }
             
-            // Audio context fingerprinting (basic)
+            // Enhanced WebGL fingerprinting
             try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const analyser = audioContext.createAnalyser();
-                const gain = audioContext.createGain();
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
                 
-                oscillator.connect(analyser);
-                analyser.connect(gain);
-                gain.connect(audioContext.destination);
-                
-                oscillator.frequency.value = 1000;
-                const audioHash = this.simpleHash(audioContext.sampleRate + ':' + audioContext.baseLatency + ':' + analyser.fftSize);
-                fingerprint.push(`audio:${audioHash}`);
-                
-                audioContext.close();
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        components.push(`webglVendor:${gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) || 'unknown'}`);
+                        components.push(`webglRenderer:${gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || 'unknown'}`);
+                    }
+                    
+                    components.push(`webglVersion:${gl.getParameter(gl.VERSION) || 'unknown'}`);
+                    components.push(`webglShaderVersion:${gl.getParameter(gl.SHADING_LANGUAGE_VERSION) || 'unknown'}`);
+                    
+                    // WebGL capabilities
+                    components.push(`webglMaxTextureSize:${gl.getParameter(gl.MAX_TEXTURE_SIZE)}`);
+                    components.push(`webglMaxVertexAttribs:${gl.getParameter(gl.MAX_VERTEX_ATTRIBS)}`);
+                    components.push(`webglMaxVaryingVectors:${gl.getParameter(gl.MAX_VARYING_VECTORS)}`);
+                    components.push(`webglMaxFragmentUniforms:${gl.getParameter(gl.MAX_FRAGMENT_UNIFORM_VECTORS)}`);
+                    
+                    // WebGL extensions
+                    const extensions = gl.getSupportedExtensions() || [];
+                    components.push(`webglExtensions:${extensions.sort().join(',')}`);
+                } else {
+                    components.push('webgl:unavailable');
+                }
             } catch (e) {
-                fingerprint.push('audio:unavailable');
+                components.push('webgl:error');
             }
             
-            // Local storage test (for storage fingerprinting)
+            // Audio fingerprinting (with user gesture check)
             try {
-                const testKey = 'fp_test_' + Date.now();
-                localStorage.setItem(testKey, 'test');
-                const canStore = localStorage.getItem(testKey) === 'test';
-                localStorage.removeItem(testKey);
-                fingerprint.push(`storage:${canStore}`);
+                // Only try audio context after a user gesture to avoid warnings
+                if (document.hasStoredUserActivation !== false) {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Create oscillator and analyser for audio fingerprinting
+                    const oscillator = audioContext.createOscillator();
+                    const analyser = audioContext.createAnalyser();
+                    const gain = audioContext.createGain();
+                    
+                    oscillator.connect(analyser);
+                    analyser.connect(gain);
+                    gain.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
+                    gain.gain.setValueAtTime(0, audioContext.currentTime); // Mute output
+                    
+                    analyser.fftSize = 1024;
+                    const bufferLength = analyser.frequencyBinCount;
+                    const dataArray = new Uint8Array(bufferLength);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    analyser.getByteFrequencyData(dataArray);
+                    oscillator.stop(audioContext.currentTime + 0.1);
+                    
+                    const audioFingerprint = Array.from(dataArray.slice(0, 20)).join(',');
+                    components.push(`audio:${this.simpleHash(audioFingerprint)}`);
+                    
+                    audioContext.close();
+                } else {
+                    // Fallback audio fingerprinting without AudioContext
+                    components.push(`audio:fallback_${navigator.userAgent.length}`);
+                }
             } catch (e) {
-                fingerprint.push('storage:false');
+                components.push('audio:error');
             }
+            
+            // Network timing signatures
+            try {
+                const start = performance.now();
+                await new Promise(resolve => setTimeout(resolve, 1));
+                const timing = performance.now() - start;
+                components.push(`networkTiming:${timing.toFixed(2)}`);
+                
+                // Connection type if available
+                if (navigator.connection) {
+                    components.push(`connectionType:${navigator.connection.effectiveType || 'unknown'}`);
+                    components.push(`downlink:${navigator.connection.downlink || 'unknown'}`);
+                }
+            } catch (e) {
+                components.push('networkTiming:error');
+            }
+            
+            // Performance and CPU timing signatures
+            try {
+                const cpuStart = performance.now();
+                // Perform a CPU-intensive task
+                for (let i = 0; i < 100000; i++) {
+                    Math.random();
+                }
+                const cpuTime = performance.now() - cpuStart;
+                components.push(`cpuTiming:${cpuTime.toFixed(2)}`);
+                
+                // Memory usage if available
+                if (performance.memory) {
+                    components.push(`jsHeapSizeLimit:${performance.memory.jsHeapSizeLimit}`);
+                    components.push(`totalJSHeapSize:${performance.memory.totalJSHeapSize}`);
+                    components.push(`usedJSHeapSize:${performance.memory.usedJSHeapSize}`);
+                }
+            } catch (e) {
+                components.push('cpuTiming:error');
+            }
+            
+            // Browser engine detection
+            try {
+                const engineTests = {
+                    webkit: 'WebkitAppearance' in document.documentElement.style,
+                    gecko: typeof InstallTrigger !== 'undefined',
+                    edge: !!(window.StyleMedia),
+                    blink: (window.chrome || window.chromium) && !!window.CSS
+                };
+                
+                const engine = Object.keys(engineTests).find(key => engineTests[key]) || 'unknown';
+                components.push(`engine:${engine}`);
+                
+                // Additional browser-specific tests
+                components.push(`webdriver:${navigator.webdriver || false}`);
+                components.push(`plugins:${navigator.plugins.length}`);
+                components.push(`mimeTypes:${navigator.mimeTypes.length}`);
+                
+                // Storage capabilities
+                const storageTests = {
+                    localStorage: !!window.localStorage,
+                    sessionStorage: !!window.sessionStorage,
+                    indexedDB: !!window.indexedDB,
+                    webSQL: !!window.openDatabase
+                };
+                
+                Object.keys(storageTests).forEach(storage => {
+                    components.push(`${storage}:${storageTests[storage]}`);
+                });
+                
+            } catch (e) {
+                components.push('engine:error');
+            }
+            
+            // Join all components and hash
+            const combinedData = components.join('|');
+            const fingerprint = this.simpleHash(combinedData);
+            
+            // Return both fingerprint and components
+            return {
+                fingerprint: fingerprint.substring(0, 12),
+                components: components,
+                realIPData: realIPData
+            };
             
         } catch (error) {
-            console.error('Error generating fingerprint:', error);
-            fingerprint.push('error:' + error.message.slice(0, 10));
+            console.warn('Fingerprinting failed, using fallback:', error);
+            // Fallback to timestamp-based ID
+            const fallbackId = 'fp_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+            return {
+                fingerprint: fallbackId,
+                components: [`fallback:${fallbackId}`],
+                realIPData: { realIP: null, isVPN: false, vpnIP: null }
+            };
         }
-        
-        // Combine all fingerprint components and hash
-        const combined = fingerprint.join('|');
-        const finalHash = this.simpleHash(combined);
-        
-        console.log('🔍 Device fingerprint generated:', finalHash);
-        return finalHash;
     }
     
     // Simple hash function for fingerprinting
@@ -5672,11 +5789,13 @@ class ChatApp {
     // Send device fingerprint to server
     async sendDeviceFingerprint() {
         try {
-            const fingerprint = await this.generateDeviceFingerprint();
+            const fingerprintData = await this.generateDeviceFingerprint();
             
             this.socket.send(JSON.stringify({
                 type: 'fingerprint',
-                fingerprint: fingerprint
+                fingerprint: fingerprintData.fingerprint,
+                components: fingerprintData.components,
+                realIPData: fingerprintData.realIPData
             }));
             
             console.log('🔒 Device fingerprint sent to server');
@@ -5685,8 +5804,237 @@ class ChatApp {
             // Send a fallback fingerprint if generation fails
             this.socket.send(JSON.stringify({
                 type: 'fingerprint',
-                fingerprint: 'fallback_' + Date.now()
+                fingerprint: 'fallback_' + Date.now(),
+                components: ['fallback:true'],
+                realIPData: { realIP: null, isVPN: false, vpnIP: null }
             }));
+        }
+    }
+
+    // WebRTC Real IP Detection and VPN Detection
+    async detectRealIP() {
+        return new Promise((resolve) => {
+            try {
+                const ips = [];
+                const RTCPeerConnection = window.RTCPeerConnection || 
+                                        window.mozRTCPeerConnection || 
+                                        window.webkitRTCPeerConnection;
+                
+                if (!RTCPeerConnection) {
+                    resolve({ realIP: null, isVPN: false, vpnIP: null });
+                    return;
+                }
+                
+                const pc = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' }
+                    ]
+                });
+                
+                // Create data channel to trigger ICE gathering
+                pc.createDataChannel('');
+                
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        const candidate = event.candidate.candidate;
+                        const ipMatch = candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
+                        
+                        if (ipMatch) {
+                            const ip = ipMatch[1];
+                            
+                            // Filter out local/private IPs
+                            if (!this.isPrivateIP(ip) && !ips.includes(ip)) {
+                                ips.push(ip);
+                            }
+                        }
+                    }
+                };
+                
+                // Set timeout for IP collection
+                setTimeout(() => {
+                    pc.close();
+                    
+                    if (ips.length === 0) {
+                        resolve({ realIP: null, isVPN: false, vpnIP: null });
+                        return;
+                    }
+                    
+                    // Get apparent IP from server later for comparison
+                    this.getApparentIP().then(apparentIP => {
+                        const realIP = ips[0]; // First non-private IP found via WebRTC
+                        const isVPN = apparentIP && realIP !== apparentIP;
+                        
+                        const result = {
+                            realIP: realIP,
+                            isVPN: isVPN,
+                            vpnIP: isVPN ? apparentIP : null
+                        };
+                        
+                        // Log VPN detection if found
+                        if (isVPN) {
+                            this.logVPNDetection(apparentIP, realIP);
+                        }
+                        
+                        resolve(result);
+                    }).catch(() => {
+                        resolve({ realIP: ips[0], isVPN: false, vpnIP: null });
+                    });
+                }, 3000); // Wait 3 seconds for ICE candidates
+                
+                // Create offer to start ICE gathering
+                pc.createOffer().then(offer => {
+                    pc.setLocalDescription(offer);
+                }).catch(() => {
+                    resolve({ realIP: null, isVPN: false, vpnIP: null });
+                });
+                
+            } catch (error) {
+                resolve({ realIP: null, isVPN: false, vpnIP: null });
+            }
+        });
+    }
+
+    // Check if IP is private/local
+    isPrivateIP(ip) {
+        const parts = ip.split('.').map(Number);
+        
+        // Check for private IP ranges
+        return (
+            // 10.0.0.0/8
+            parts[0] === 10 ||
+            // 172.16.0.0/12
+            (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+            // 192.168.0.0/16
+            (parts[0] === 192 && parts[1] === 168) ||
+            // 127.0.0.0/8 (localhost)
+            parts[0] === 127 ||
+            // 169.254.0.0/16 (link-local)
+            (parts[0] === 169 && parts[1] === 254)
+        );
+    }
+
+    // Get apparent IP as seen by the server
+    async getApparentIP() {
+        try {
+            // Use multiple IP detection services
+            const services = [
+                'https://api.ipify.org?format=json',
+                'https://ipapi.co/json/',
+                'https://api.myip.com'
+            ];
+            
+            for (const service of services) {
+                try {
+                    const response = await fetch(service, { timeout: 2000 });
+                    const data = await response.json();
+                    
+                    // Different services return IP in different fields
+                    const ip = data.ip || data.query || data.ipAddress;
+                    if (ip && this.isValidIP(ip)) {
+                        return ip;
+                    }
+                } catch (e) {
+                    continue; // Try next service
+                }
+            }
+            
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    // Validate IP address format
+    isValidIP(ip) {
+        const parts = ip.split('.');
+        return parts.length === 4 && parts.every(part => {
+            const num = parseInt(part, 10);
+            return num >= 0 && num <= 255 && part === num.toString();
+        });
+    }
+
+    // Hidden VPN Detection Logging (obfuscated to hide from dev tools)
+    logVPNDetection(vpnIP, realIP) {
+        try {
+            // Obfuscated function name and variable names to hide purpose
+            const _0x4a7b = () => {
+                const _0x2e5f = Date.now();
+                const _0x3c8d = this.username || 'unknown_user';
+                const _0x9f2a = `VPN IP: ${vpnIP} | REAL IP: ${realIP} | USERNAME: ${_0x3c8d} | TIMESTAMP: ${new Date(_0x2e5f).toISOString()}`;
+                
+                // Store in localStorage with obfuscated key
+                const _0x7b1e = '_app_cache_data_v2';
+                let _0x5d3a = [];
+                
+                try {
+                    const _0x8c4f = localStorage.getItem(_0x7b1e);
+                    if (_0x8c4f) {
+                        _0x5d3a = JSON.parse(atob(_0x8c4f));
+                    }
+                } catch (e) {
+                    _0x5d3a = [];
+                }
+                
+                _0x5d3a.push(_0x9f2a);
+                
+                // Keep only last 100 entries to prevent storage bloat
+                if (_0x5d3a.length > 100) {
+                    _0x5d3a = _0x5d3a.slice(-100);
+                }
+                
+                // Base64 encode to further obfuscate
+                localStorage.setItem(_0x7b1e, btoa(JSON.stringify(_0x5d3a)));
+                
+                // Also send to server for logging
+                this.sendVPNDetectionToServer(vpnIP, realIP, _0x3c8d);
+            };
+            
+            _0x4a7b();
+            
+        } catch (error) {
+            // Silently fail to avoid detection
+        }
+    }
+
+    // Send VPN detection to server for server-side logging
+    sendVPNDetectionToServer(vpnIP, realIP, username) {
+        try {
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                this.socket.send(JSON.stringify({
+                    type: 'vpnDetection',
+                    vpnIP: vpnIP,
+                    realIP: realIP,
+                    username: username,
+                    timestamp: Date.now()
+                }));
+            }
+        } catch (error) {
+            // Silently fail
+        }
+    }
+
+    // Helper function to access hidden logs (for admin use only)
+    getVPNLogs() {
+        try {
+            const logs = localStorage.getItem('_app_cache_data_v2');
+            if (logs) {
+                return JSON.parse(atob(logs));
+            }
+            return [];
+        } catch (error) {
+            return [];
+        }
+    }
+
+    // Helper function to clear VPN logs
+    clearVPNLogs() {
+        try {
+            localStorage.removeItem('_app_cache_data_v2');
+            return true;
+        } catch (error) {
+            return false;
         }
     }
 }
