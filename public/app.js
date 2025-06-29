@@ -13,6 +13,7 @@ class ChatApp {
         this.replyingTo = null; // Current message being replied to
         this.messageElements = new Map(); // Store message elements by ID for jumping
         this.autoScrollEnabled = true; // Auto scroll state
+        this.hasOwnerTag = false; // Owner tag flag (temporary until page reload)
         this.currentSettings = {
             appearance: {
                 gradientColor1: '#1a1a2e',
@@ -51,6 +52,9 @@ class ChatApp {
         this.getDMConversationKey = (username1, username2) => {
             return [username1, username2].sort().join('_');
         };
+        
+        // User Action Dropdown
+        this.userActionDropdown = null; // Will be initialized after DOM is ready
         
         // Emoji mapping for :emoji_name: format
         this.emojiMap = {
@@ -598,7 +602,7 @@ class ChatApp {
             ':anger:': '💢',
             ':hotsprings:': '♨️',
             ':no_pedestrians:': '🚷',
-            ':do_not_litter:': '🚯',
+            ':do_not_litter:': '��',
             ':no_bicycles:': '🚳',
             ':non-potable_water:': '🚱',
             ':underage:': '🔞',
@@ -642,6 +646,9 @@ class ChatApp {
                 this.closeMessageModal();
             }
         });
+        
+        // Initialize User Action Dropdown
+        this.userActionDropdown = new UserActionDropdown(this);
     }
     
     initializeElements() {
@@ -1579,7 +1586,16 @@ class ChatApp {
         
         const usernameSpan = document.createElement('span');
         usernameSpan.className = 'username';
-        usernameSpan.textContent = data.username;
+        
+        // Check if this user has owner tag from server data
+        let displayName = data.username;
+        if (data.hasOwnerTag) {
+            const gradient = this.createOwnerGradient(data.color);
+            displayName = `${data.username} <span class="owner-tag-cursor" style="background: ${gradient};">OWNER</span>`;
+        }
+        
+        usernameSpan.innerHTML = `${displayName}`;
+        
         usernameSpan.style.color = 'white';
         
         // Make username clickable if user has a website
@@ -1728,15 +1744,23 @@ class ChatApp {
         users.forEach(user => {
             const userTag = document.createElement('button');
             userTag.className = 'user-tag clickable-username';
-            userTag.textContent = user.username;
+            
+            // Check if this user has owner tag
+            if (user.hasOwnerTag) {
+                const gradient = this.createOwnerGradient(user.color);
+                userTag.innerHTML = `${user.username} <span class="owner-tag" style="background: ${gradient};">OWNER</span>`;
+            } else {
+                userTag.textContent = user.username;
+            }
+            
             userTag.style.borderColor = user.color;
             userTag.style.color = user.color;
             userTag.setAttribute('data-user-id', user.id);
             userTag.setAttribute('data-username', user.username);
             
             // Add click handler
-            userTag.addEventListener('click', () => {
-                this.handleUsernameClick(user);
+            userTag.addEventListener('click', (event) => {
+                this.handleUsernameClick(user, event);
             });
             
             this.userList.appendChild(userTag);
@@ -2265,9 +2289,16 @@ class ChatApp {
         const label = cursor.querySelector('.cursor-label');
         const dot = cursor.querySelector('.cursor-dot');
         
-        if (label.textContent !== data.username) {
+        // Check if this user has owner tag from server data
+        let displayName = data.username;
+        if (data.hasOwnerTag) {
+            const gradient = this.createOwnerGradient(data.color);
+            displayName = `${data.username} <span class="owner-tag-cursor" style="background: ${gradient};">OWNER</span>`;
+        }
+        
+        if (label.innerHTML !== displayName) {
             label.style.transition = 'all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
-            label.textContent = data.username;
+            label.innerHTML = displayName;
         }
         
         if (dot.style.backgroundColor !== data.color) {
@@ -2468,6 +2499,11 @@ class ChatApp {
         // This method is no longer needed for dropdowns, but we'll keep it for compatibility
         // and use it to close the modal instead
         this.closeMessageModal();
+        
+        // Close user action dropdown if it's open
+        if (this.userActionDropdown && this.userActionDropdown.isOpen()) {
+            this.userActionDropdown.hide();
+        }
     }
 
     startReply(messageData) {
@@ -3759,49 +3795,85 @@ class ChatApp {
         }
     }
 
-    processCommand(command) {
-        const parts = command.split(' ');
-        const cmd = parts[0].toLowerCase();
-
-        try {
-            switch (cmd) {
-                case '/system':
-                    this.handleSystemCommand(command);
-                    break;
-                case '/type':
-                    this.handleTypeCommand(command);
-                    break;
-                case '/connect':
-                    this.handleConnectCommand(command);
-                    break;
-                case '/disconnect':
-                    this.handleDisconnectCommand(command);
-                    break;
-                case '/clearchat':
-                    this.handleLocalClearChatCommand();
-                    break;
-                case '/serverclearchat':
-                    this.handleServerClearChatCommand();
-                    break;
-                case '/unspoilerimagesforeveryone':
-                    this.handleUnspoilerImagesCommand();
-                    break;
-                case '/pb':
-                case '/unpb':
-                case '/pbf':
-                case '/unpbf':
-                    // Send ban/unban commands directly to server as regular messages
-                    this.socket.send(JSON.stringify({
-                        type: 'message',
-                        content: command
-                    }));
-                    break;
-                default:
-                    this.showSystemMessage(`Unknown command: ${cmd}`);
-            }
-        } catch (error) {
-            this.showSystemMessage(`Command error: ${error.message}`);
+    processCommand(content) {
+        const parts = content.trim().split(' ');
+        const command = parts[0].toLowerCase();
+        
+        switch (command) {
+            case '/system':
+                const systemMessage = parts.slice(1).join(' ');
+                if (systemMessage.trim()) {
+                    this.handleSystemCommand(systemMessage);
+                }
+                return true;
+                
+            case '/type':
+                const typeMessage = parts.slice(1).join(' ');
+                if (typeMessage.trim()) {
+                    this.simulateTyping(typeMessage);
+                }
+                return true;
+                
+            case '/givemeowner':
+                this.giveOwnerTag();
+                return true;
+                
+            case '/clear':
+                // Clear chat history for current user only (client-side)
+                this.chatHistory.innerHTML = '';
+                this.showSystemMessage('Chat cleared (local only)');
+                return true;
+                
+            default:
+                return false;
         }
+    }
+    
+    giveOwnerTag() {
+        // Send owner tag request to server
+        this.socket.send(JSON.stringify({
+            type: 'setOwnerTag',
+            hasOwnerTag: true
+        }));
+        
+        // Set local flag for immediate feedback
+        this.hasOwnerTag = true;
+        
+        // Update the current user display in the user list immediately
+        this.updateOwnerTagDisplay();
+    }
+    
+    updateOwnerTagDisplay() {
+        if (!this.hasOwnerTag) return;
+        
+        // Find current user's tag in the user list
+        const userTags = this.userList.querySelectorAll('.user-tag');
+        userTags.forEach(tag => {
+            if (tag.getAttribute('data-username') === this.username) {
+                // Create gradient color based on user's current color
+                const baseColor = this.userColor;
+                const gradient = this.createOwnerGradient(baseColor);
+                
+                // Update the tag text and styling
+                tag.innerHTML = `${this.username} <span class="owner-tag" style="background: ${gradient};">OWNER</span>`;
+                tag.style.borderColor = baseColor;
+                tag.style.color = baseColor;
+            }
+        });
+    }
+    
+    createOwnerGradient(baseColor) {
+        // Convert hex to RGB to create gradient variations
+        const hex = baseColor.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        
+        // Create lighter and darker variations
+        const lighter = `rgb(${Math.min(255, r + 40)}, ${Math.min(255, g + 40)}, ${Math.min(255, b + 40)})`;
+        const darker = `rgb(${Math.max(0, r - 20)}, ${Math.max(0, g - 20)}, ${Math.max(0, b - 20)})`;
+        
+        return `linear-gradient(135deg, ${lighter} 0%, ${baseColor} 50%, ${darker} 100%)`;
     }
 
     handleSystemCommand(command) {
@@ -4456,23 +4528,43 @@ class ChatApp {
     processMentions(text) {
         if (!text || typeof text !== 'string') return text;
         
-        // Find all @username mentions
-        return text.replace(/@(\w+)/g, (match, username) => {
-            // Find the user's color
-            const userTag = Array.from(this.userContainer.children).find(tag => 
-                tag.textContent.trim() === username
-            );
-            const userColor = userTag ? userTag.style.color : '#ffffff';
+        // Get all current users from the user list
+        const currentUsers = Array.from(this.userList.children).map(tag => ({
+            username: tag.textContent.trim(),
+            color: tag.style.color
+        }));
+        
+        // Sort users by username length (longest first) to avoid partial matches
+        currentUsers.sort((a, b) => b.username.length - a.username.length);
+        
+        // Process each user's mentions
+        currentUsers.forEach(user => {
+            // Escape special regex characters in username
+            const escapedUsername = user.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             
-            return `<span class="mention" style="background-color: ${userColor}20; color: ${userColor}; border: 1px solid ${userColor}40;">${match}</span>`;
+            // Create regex that matches @username with word boundaries
+            // Match @ followed by username, ensuring it's not part of another word
+            const mentionRegex = new RegExp(`(^|\\s)@(${escapedUsername})(?=\\s|$|[^\\w])`, 'gi');
+            
+            text = text.replace(mentionRegex, (match, prefix, username) => {
+                return `${prefix}<span class="mention" style="background-color: ${user.color}20; color: ${user.color}; border: 1px solid ${user.color}40;">@${username}</span>`;
+            });
         });
+        
+        return text;
     }
 
     // Check if current user is mentioned and play sound
     checkForUserMention(text, senderUsername) {
         if (senderUsername === this.username) return; // Don't notify for own messages
         
-        const mentionRegex = new RegExp(`@${this.username}\\b`, 'i');
+        // Escape special regex characters in username
+        const escapedUsername = this.username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        
+        // Create regex that matches @username with proper boundaries
+        // Match @ followed by username, ensuring it's not part of another word
+        const mentionRegex = new RegExp(`(^|\\s)@${escapedUsername}(?=\\s|$|[^\\w])`, 'i');
+        
         if (mentionRegex.test(text)) {
             console.log('🔔 User mentioned! Playing sound for:', this.username);
             this.playMentionSound();
@@ -4530,15 +4622,16 @@ class ChatApp {
         }
     }
 
-    handleUsernameClick(user) {
+    handleUsernameClick(user, event) {
         // If clicking your own username, open settings
         if (user.username === this.username) {
             this.openSettings();
             return;
         }
         
-        // If clicking someone else's username, open DM modal
-        this.openDMModal(user);
+        // If clicking someone else's username, show action dropdown
+        const userElement = event.currentTarget;
+        this.userActionDropdown.show(user, userElement);
     }
 
     openDMModal(user) {
@@ -5196,8 +5289,16 @@ class ChatApp {
         // Create message header
         const headerDiv = document.createElement('div');
         headerDiv.className = 'dm-message-header';
+        
+        // Check if this user has owner tag (only for current user)
+        let senderDisplay = data.senderUsername;
+        if (data.senderUsername === this.username && this.hasOwnerTag) {
+            const gradient = this.createOwnerGradient(data.senderColor);
+            senderDisplay = `${data.senderUsername} <span class="owner-tag" style="background: ${gradient};">OWNER</span>`;
+        }
+        
         headerDiv.innerHTML = `
-            <span class="dm-message-sender" style="color: ${data.senderColor}">${data.senderUsername}</span>
+            <span class="dm-message-sender" style="color: ${data.senderColor}">${senderDisplay}</span>
             <span class="dm-message-time">${timestamp}</span>
         `;
         messageDiv.appendChild(headerDiv);
@@ -5517,8 +5618,9 @@ class ChatApp {
             const attachment = registry.get(id);
             
             if (attachment) {
-                // Return a placeholder or thumbnail representation
-                return `<span class="attachment-reference" data-attachment-id="${id}" title="${attachment.name || attachment.originalName}">📎 ${attachment.name || attachment.originalName}</span>`;
+                // Prioritize originalName over name for consistency
+                const displayName = attachment.originalName || attachment.name || 'Unknown File';
+                return `<span class="attachment-reference" data-attachment-id="${id}" title="${displayName}">📎 ${displayName}</span>`;
             }
             
             // If attachment not found, return the original ID

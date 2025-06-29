@@ -171,6 +171,7 @@ body {
     color: white;
     transition: all 0.3s ease;
     border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
 }
 
 .user-tag.clickable-username {
@@ -4366,4 +4367,210 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     .click-me-section p {
         font-size: 14px;
     }
+}
+
+/* User Action Dropdown */
+.user-action-dropdown {
+    position: fixed;
+    background: rgba(30, 30, 30, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 
+        0 20px 40px rgba(0, 0, 0, 0.3),
+        0 10px 20px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    z-index: 2000;
+    min-width: 180px;
+    overflow: hidden;
+    transform: translateY(-8px) scale(0.95);
+    opacity: 0;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+}
+
+.user-action-dropdown.show {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.user-action-dropdown.hidden {
+    display: none;
+}
+
+.user-action-list {
+    padding: 8px;
+}
+
+.user-action-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.user-action-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(2px);
+}
+
+.user-action-item.direct-message:hover {
+    background: rgba(74, 144, 226, 0.2);
+    border: 1px solid rgba(74, 144, 226, 0.3);
+}
+
+.user-action-item.block:hover {
+    background: rgba(255, 59, 59, 0.2);
+    border: 1px solid rgba(255, 59, 59, 0.3);
+}
+
+.user-action-icon {
+    font-size: 16px;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.user-action-text {
+    flex: 1;
+}
+
+/* Animation keyframes for user action dropdown */
+@keyframes userActionSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.user-action-dropdown.show {
+    animation: userActionSlideIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Mobile responsive adjustments for user actions */
+@media (max-width: 768px) {
+    .user-action-dropdown {
+        min-width: 200px;
+        max-width: 90vw;
+    }
+    
+    .user-action-item {
+        padding: 14px 18px;
+        font-size: 16px;
+    }
+    
+    .user-action-icon {
+        font-size: 18px;
+        width: 22px;
+        height: 22px;
+    }
+}
+
+/* Owner Tag Styles - Apple-like design */
+.owner-tag {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    margin-left: 4px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 
+        0 2px 8px rgba(0, 0, 0, 0.15),
+        0 1px 3px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    animation: ownerTagGlow 2s ease-in-out infinite alternate;
+    transform: translateY(-1px);
+    transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.owner-tag:hover {
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 
+        0 4px 12px rgba(0, 0, 0, 0.2),
+        0 2px 6px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* Owner tag for cursor labels */
+.owner-tag-cursor {
+    display: inline-block;
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-size: 8px;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    margin-left: 2px;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 
+        0 1px 4px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    animation: ownerTagGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes ownerTagGlow {
+    0% {
+        box-shadow: 
+            0 2px 8px rgba(0, 0, 0, 0.15),
+            0 1px 3px rgba(0, 0, 0, 0.1),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2),
+            0 0 10px rgba(255, 255, 255, 0.1);
+    }
+    100% {
+        box-shadow: 
+            0 2px 8px rgba(0, 0, 0, 0.15),
+            0 1px 3px rgba(0, 0, 0, 0.1),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2),
+            0 0 20px rgba(255, 255, 255, 0.2);
+    }
+}
+
+/* Enhanced user tags with owner support */
+.user-tag {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 13px;
+    color: white;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.user-tag.clickable-username {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.user-tag.clickable-username:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.user-tag.clickable-username:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
 }

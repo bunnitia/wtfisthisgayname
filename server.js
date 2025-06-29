@@ -205,7 +205,8 @@ function getOnlineUsers() {
         id: client.id,
         username: client.username,
         color: client.color,
-        website: client.website || ''
+        website: client.website || '',
+        hasOwnerTag: client.hasOwnerTag || false
     }));
     return users;
 }
@@ -377,7 +378,8 @@ wss.on('connection', (ws, req) => {
                             username: messageClient.username,
                             color: messageClient.color,
                             content: message.content,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
+                            hasOwnerTag: messageClient.hasOwnerTag || false
                         };
                         
                         // Add attachments if present
@@ -430,7 +432,8 @@ wss.on('connection', (ws, req) => {
                                 senderColor: dmSender.color,
                                 targetUsername: targetClient.username,
                                 content: message.content,
-                                timestamp: Date.now()
+                                timestamp: Date.now(),
+                                hasOwnerTag: dmSender.hasOwnerTag || false
                             };
                             
                             // Add attachments if present
@@ -555,6 +558,32 @@ wss.on('connection', (ws, req) => {
                     }
                     break;
                     
+                case 'setOwnerTag':
+                    const ownerClient = clients.get(clientId);
+                    if (ownerClient) {
+                        // Log the owner tag change
+                        logEvent('OWNER_TAG', ownerClient.username, ownerClient.ip, `Owner tag set to: ${message.hasOwnerTag}`);
+                        
+                        // Update the client's owner tag status
+                        ownerClient.hasOwnerTag = message.hasOwnerTag;
+                        
+                        // Broadcast updated user list to all clients so everyone sees the owner tag
+                        broadcast({
+                            type: 'userList',
+                            users: getOnlineUsers(),
+                            count: clients.size
+                        });
+                        
+                        // Send confirmation back to the user
+                        if (ownerClient.ws && ownerClient.ws.readyState === WebSocket.OPEN) {
+                            ownerClient.ws.send(JSON.stringify({
+                                type: 'systemMessage',
+                                message: message.hasOwnerTag ? 'OWNER tag activated!' : 'OWNER tag deactivated!'
+                            }));
+                        }
+                    }
+                    break;
+                    
                 case 'cursor':
                     const cursorClient = clients.get(clientId);
                     if (cursorClient) {
@@ -565,6 +594,7 @@ wss.on('connection', (ws, req) => {
                             username: cursorClient.username,
                             color: cursorClient.color,
                             isTyping: cursorClient.isTyping,
+                            hasOwnerTag: cursorClient.hasOwnerTag || false,
                             x: message.x,
                             y: message.y
                         }, ws);
