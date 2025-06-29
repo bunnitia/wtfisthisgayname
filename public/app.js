@@ -13,7 +13,6 @@ class ChatApp {
         this.replyingTo = null; // Current message being replied to
         this.messageElements = new Map(); // Store message elements by ID for jumping
         this.autoScrollEnabled = true; // Auto scroll state
-        this.hasOwnerTag = false; // Owner tag flag (temporary until page reload)
         this.currentSettings = {
             appearance: {
                 gradientColor1: '#1a1a2e',
@@ -602,7 +601,7 @@ class ChatApp {
             ':anger:': '💢',
             ':hotsprings:': '♨️',
             ':no_pedestrians:': '🚷',
-            ':do_not_litter:': '��',
+            ':do_not_litter:': '🚯',
             ':no_bicycles:': '🚳',
             ':non-potable_water:': '🚱',
             ':underage:': '🔞',
@@ -1586,16 +1585,7 @@ class ChatApp {
         
         const usernameSpan = document.createElement('span');
         usernameSpan.className = 'username';
-        
-        // Check if this user has owner tag from server data
-        let displayName = data.username;
-        if (data.hasOwnerTag) {
-            const gradient = this.createOwnerGradient(data.color);
-            displayName = `${data.username} <span class="owner-tag-cursor" style="background: ${gradient};">OWNER</span>`;
-        }
-        
-        usernameSpan.innerHTML = `${displayName}`;
-        
+        usernameSpan.textContent = data.username;
         usernameSpan.style.color = 'white';
         
         // Make username clickable if user has a website
@@ -1744,15 +1734,7 @@ class ChatApp {
         users.forEach(user => {
             const userTag = document.createElement('button');
             userTag.className = 'user-tag clickable-username';
-            
-            // Check if this user has owner tag
-            if (user.hasOwnerTag) {
-                const gradient = this.createOwnerGradient(user.color);
-                userTag.innerHTML = `${user.username} <span class="owner-tag" style="background: ${gradient};">OWNER</span>`;
-            } else {
-                userTag.textContent = user.username;
-            }
-            
+            userTag.textContent = user.username;
             userTag.style.borderColor = user.color;
             userTag.style.color = user.color;
             userTag.setAttribute('data-user-id', user.id);
@@ -2289,16 +2271,9 @@ class ChatApp {
         const label = cursor.querySelector('.cursor-label');
         const dot = cursor.querySelector('.cursor-dot');
         
-        // Check if this user has owner tag from server data
-        let displayName = data.username;
-        if (data.hasOwnerTag) {
-            const gradient = this.createOwnerGradient(data.color);
-            displayName = `${data.username} <span class="owner-tag-cursor" style="background: ${gradient};">OWNER</span>`;
-        }
-        
-        if (label.innerHTML !== displayName) {
+        if (label.textContent !== data.username) {
             label.style.transition = 'all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
-            label.innerHTML = displayName;
+            label.textContent = data.username;
         }
         
         if (dot.style.backgroundColor !== data.color) {
@@ -3795,85 +3770,49 @@ class ChatApp {
         }
     }
 
-    processCommand(content) {
-        const parts = content.trim().split(' ');
-        const command = parts[0].toLowerCase();
-        
-        switch (command) {
-            case '/system':
-                const systemMessage = parts.slice(1).join(' ');
-                if (systemMessage.trim()) {
-                    this.handleSystemCommand(systemMessage);
-                }
-                return true;
-                
-            case '/type':
-                const typeMessage = parts.slice(1).join(' ');
-                if (typeMessage.trim()) {
-                    this.simulateTyping(typeMessage);
-                }
-                return true;
-                
-            case '/givemeowner':
-                this.giveOwnerTag();
-                return true;
-                
-            case '/clear':
-                // Clear chat history for current user only (client-side)
-                this.chatHistory.innerHTML = '';
-                this.showSystemMessage('Chat cleared (local only)');
-                return true;
-                
-            default:
-                return false;
-        }
-    }
-    
-    giveOwnerTag() {
-        // Send owner tag request to server
-        this.socket.send(JSON.stringify({
-            type: 'setOwnerTag',
-            hasOwnerTag: true
-        }));
-        
-        // Set local flag for immediate feedback
-        this.hasOwnerTag = true;
-        
-        // Update the current user display in the user list immediately
-        this.updateOwnerTagDisplay();
-    }
-    
-    updateOwnerTagDisplay() {
-        if (!this.hasOwnerTag) return;
-        
-        // Find current user's tag in the user list
-        const userTags = this.userList.querySelectorAll('.user-tag');
-        userTags.forEach(tag => {
-            if (tag.getAttribute('data-username') === this.username) {
-                // Create gradient color based on user's current color
-                const baseColor = this.userColor;
-                const gradient = this.createOwnerGradient(baseColor);
-                
-                // Update the tag text and styling
-                tag.innerHTML = `${this.username} <span class="owner-tag" style="background: ${gradient};">OWNER</span>`;
-                tag.style.borderColor = baseColor;
-                tag.style.color = baseColor;
+    processCommand(command) {
+        const parts = command.split(' ');
+        const cmd = parts[0].toLowerCase();
+
+        try {
+            switch (cmd) {
+                case '/system':
+                    this.handleSystemCommand(command);
+                    break;
+                case '/type':
+                    this.handleTypeCommand(command);
+                    break;
+                case '/connect':
+                    this.handleConnectCommand(command);
+                    break;
+                case '/disconnect':
+                    this.handleDisconnectCommand(command);
+                    break;
+                case '/clearchat':
+                    this.handleLocalClearChatCommand();
+                    break;
+                case '/serverclearchat':
+                    this.handleServerClearChatCommand();
+                    break;
+                case '/unspoilerimagesforeveryone':
+                    this.handleUnspoilerImagesCommand();
+                    break;
+                case '/pb':
+                case '/unpb':
+                case '/pbf':
+                case '/unpbf':
+                    // Send ban/unban commands directly to server as regular messages
+                    this.socket.send(JSON.stringify({
+                        type: 'message',
+                        content: command
+                    }));
+                    break;
+                default:
+                    this.showSystemMessage(`Unknown command: ${cmd}`);
             }
-        });
-    }
-    
-    createOwnerGradient(baseColor) {
-        // Convert hex to RGB to create gradient variations
-        const hex = baseColor.replace('#', '');
-        const r = parseInt(hex.substr(0, 2), 16);
-        const g = parseInt(hex.substr(2, 2), 16);
-        const b = parseInt(hex.substr(4, 2), 16);
-        
-        // Create lighter and darker variations
-        const lighter = `rgb(${Math.min(255, r + 40)}, ${Math.min(255, g + 40)}, ${Math.min(255, b + 40)})`;
-        const darker = `rgb(${Math.max(0, r - 20)}, ${Math.max(0, g - 20)}, ${Math.max(0, b - 20)})`;
-        
-        return `linear-gradient(135deg, ${lighter} 0%, ${baseColor} 50%, ${darker} 100%)`;
+        } catch (error) {
+            this.showSystemMessage(`Command error: ${error.message}`);
+        }
     }
 
     handleSystemCommand(command) {
@@ -5289,16 +5228,8 @@ class ChatApp {
         // Create message header
         const headerDiv = document.createElement('div');
         headerDiv.className = 'dm-message-header';
-        
-        // Check if this user has owner tag (only for current user)
-        let senderDisplay = data.senderUsername;
-        if (data.senderUsername === this.username && this.hasOwnerTag) {
-            const gradient = this.createOwnerGradient(data.senderColor);
-            senderDisplay = `${data.senderUsername} <span class="owner-tag" style="background: ${gradient};">OWNER</span>`;
-        }
-        
         headerDiv.innerHTML = `
-            <span class="dm-message-sender" style="color: ${data.senderColor}">${senderDisplay}</span>
+            <span class="dm-message-sender" style="color: ${data.senderColor}">${data.senderUsername}</span>
             <span class="dm-message-time">${timestamp}</span>
         `;
         messageDiv.appendChild(headerDiv);
