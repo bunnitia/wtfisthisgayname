@@ -1473,7 +1473,7 @@ class ChatApp {
         
         // Maintain max 128 messages
         const messages = this.chatHistory.children;
-        if (messages.length > 128) {
+        if (messages.length > 5128) {
             const removedMessage = messages[0];
             const removedId = removedMessage.dataset.messageId;
             if (removedId) {
@@ -4623,7 +4623,7 @@ class ChatApp {
                     
                     <div class="dm-input-container">
                         <button class="dm-attach-button" title="Attach files or paste from clipboard">📎</button>
-                        <textarea class="dm-chat-input" rows="1" placeholder="Type a direct message... (Shift+Enter for new line, Enter to send)" maxlength="5000"></textarea>
+                        <textarea class="dm-chat-input" rows="1" placeholder="msg thing" maxlength="5000"></textarea>
                         <button class="dm-send-button" title="Send message">→</button>
                     </div>
                 </div>
