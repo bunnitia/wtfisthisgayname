@@ -1,18 +1,31 @@
 class ChatApp {
     constructor() {
-        this.socket = null;
+        // Initialize properties
         this.username = '';
         this.userColor = '#ff6b6b';
-        this.userWebsite = ''; // Add website field
+        this.userWebsite = '';
+        this.socket = null;
         this.currentUserId = null;
         this.isTyping = false;
-        this.typingTimeout = null;
-        this.cursors = new Map(); // Store other users' cursors
-        this.cursorThrottle = null; // For throttling cursor updates
-        this.typingTimeouts = new Map(); // Track typing timeouts for cursors
-        this.replyingTo = null; // Current message being replied to
-        this.messageElements = new Map(); // Store message elements by ID for jumping
-        this.autoScrollEnabled = true; // Auto scroll state
+        this.typingTimeouts = new Map();
+        this.cursors = new Map();
+        this.cursorThrottle = null;
+        this.messageElements = new Map();
+        this.unreadCount = 0;
+        this.isDocumentHidden = false;
+        this.messageTimestamps = [];
+        this.isMuted = false;
+        this.muteEndTime = null;
+        
+        // Auto-reconnection properties
+        this.isConnected = false;
+        this.wasConnected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 10;
+        this.reconnectDelay = 1000; // Initial delay in ms
+        this.maxReconnectDelay = 30000; // Max delay in ms (30 seconds)
+        this.reconnectTimer = null;
+        
         this.currentSettings = {
             appearance: {
                 gradientColor1: '#1a1a2e',
@@ -28,16 +41,13 @@ class ChatApp {
         };
         
         // Unread message tracking
-        this.unreadCount = 0;
         this.isWindowFocused = true;
         this.faviconCanvas = null;
         this.faviconContext = null;
         this.originalFavicon = null;
         
         // Spam protection
-        this.messageTimestamps = [];
         this.isMuted = false;
-        this.muteEndTime = null;
         this.muteTimer = null;
         
         // User websites storage for clickable usernames
@@ -664,6 +674,9 @@ class ChatApp {
         this.userList = document.getElementById('userContainer');
         this.onlineCount = document.getElementById('onlineCount');
         
+        // Connection status indicator
+        this.connectionStatusIndicator = document.getElementById('connectionStatus');
+        
         // File upload elements
         this.fileInput = document.getElementById('fileInput');
         this.attachButton = document.getElementById('attachButton');
@@ -757,10 +770,12 @@ class ChatApp {
         window.addEventListener('focus', () => {
             this.isWindowFocused = true;
             this.clearUnreadCount();
+            this.sendTabbedStatus(false);
         });
         
         window.addEventListener('blur', () => {
             this.isWindowFocused = false;
+            this.sendTabbedStatus(true);
         });
         
         // Track tab visibility
@@ -768,8 +783,10 @@ class ChatApp {
             if (!document.hidden) {
                 this.isWindowFocused = true;
                 this.clearUnreadCount();
+                this.sendTabbedStatus(false);
             } else {
                 this.isWindowFocused = false;
+                this.sendTabbedStatus(true);
             }
         });
     }
@@ -1043,6 +1060,11 @@ class ChatApp {
             this.handleMouseMove(e);
         });
         
+        // Window resize handler for cursor position updates
+        window.addEventListener('resize', () => {
+            this.handleWindowResize();
+        });
+        
         // Emoji picker events
         this.emojiButton.addEventListener('click', () => {
             this.openEmojiPicker();
@@ -1144,37 +1166,151 @@ class ChatApp {
     }
     
     connectWebSocket() {
+        // Clear any existing reconnection timer
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}`;
         
-        this.socket = new WebSocket(wsUrl);
+        console.log(`Attempting to connect to ${wsUrl}... (Attempt ${this.reconnectAttempts + 1})`);
+        this.updateConnectionStatus('connecting', 'Connecting...');
+        
+        try {
+            this.socket = new WebSocket(wsUrl);
+        } catch (error) {
+            console.error('WebSocket creation failed:', error);
+            this.handleConnectionError();
+            return;
+        }
+        
+        // Set connection timeout
+        const connectionTimeout = setTimeout(() => {
+            if (this.socket.readyState === WebSocket.CONNECTING) {
+                console.warn('Connection timeout reached');
+                this.socket.close();
+                this.handleConnectionError();
+            }
+        }, 10000); // 10 second timeout
         
         this.socket.onopen = () => {
+            clearTimeout(connectionTimeout);
             console.log('Connected to chat server');
+            
+            // Reset reconnection state
+            this.isConnected = true;
+            this.wasConnected = true;
+            this.reconnectAttempts = 0;
+            this.reconnectDelay = 1000; // Reset delay
+            
+            this.updateConnectionStatus('connected', 'Connected');
+            
+            // Hide connection status after successful connection
+            setTimeout(() => {
+                if (this.isConnected) {
+                    this.hideConnectionStatus();
+                }
+            }, 2000);
+            
+            // Send join message
             this.socket.send(JSON.stringify({
                 type: 'join',
                 username: this.username,
                 color: this.userColor,
-                website: this.userWebsite || '' // Include website
+                website: this.userWebsite || ''
             }));
         };
         
         this.socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            this.handleMessage(data);
+            try {
+                const data = JSON.parse(event.data);
+                this.handleMessage(data);
+            } catch (error) {
+                console.error('Error parsing message:', error);
+            }
         };
         
-        this.socket.onclose = () => {
-            console.log('Disconnected from chat server');
-            this.showSystemMessage('Disconnected from server. Please refresh to reconnect.');
+        this.socket.onclose = (event) => {
+            clearTimeout(connectionTimeout);
+            this.isConnected = false;
+            
+            console.log(`Disconnected from chat server (Code: ${event.code}, Reason: ${event.reason})`);
+            
+            // Don't attempt reconnection if it was a clean close or logout
+            if (event.code === 1000 || !this.wasConnected) {
+                this.updateConnectionStatus('disconnected', 'Disconnected');
+                return;
+            }
+            
+            this.handleConnectionError();
         };
         
         this.socket.onerror = (error) => {
+            clearTimeout(connectionTimeout);
             console.error('WebSocket error:', error);
-            this.showSystemMessage('Connection error. Please refresh to try again.');
+            this.handleConnectionError();
         };
     }
-    
+
+    handleConnectionError() {
+        this.isConnected = false;
+        
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error('Max reconnection attempts reached');
+            this.updateConnectionStatus('failed', 'Connection failed - Refresh to retry');
+            this.showSystemMessage('Connection failed. Please refresh the page to reconnect.');
+            return;
+        }
+        
+        this.reconnectAttempts++;
+        
+        // Calculate delay with exponential backoff
+        const delay = Math.min(
+            this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1),
+            this.maxReconnectDelay
+        );
+        
+        const delaySeconds = Math.round(delay / 1000);
+        console.log(`Reconnecting in ${delaySeconds} seconds... (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        
+        this.updateConnectionStatus('reconnecting', `Reconnecting in ${delaySeconds}s... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        
+        if (this.wasConnected) {
+            this.showSystemMessage(`Connection lost. Reconnecting in ${delaySeconds} seconds...`);
+        }
+        
+        this.reconnectTimer = setTimeout(() => {
+            this.connectWebSocket();
+        }, delay);
+    }
+
+    updateConnectionStatus(status, message) {
+        if (!this.connectionStatusIndicator) return;
+        
+        const statusText = this.connectionStatusIndicator.querySelector('.status-text');
+        if (!statusText) return;
+        
+        // Remove all status classes
+        this.connectionStatusIndicator.classList.remove('connecting', 'connected', 'reconnecting', 'failed');
+        
+        // Add current status class
+        this.connectionStatusIndicator.classList.add(status);
+        
+        // Update text
+        statusText.textContent = message;
+        
+        // Show the indicator
+        this.connectionStatusIndicator.classList.remove('hidden');
+    }
+
+    hideConnectionStatus() {
+        if (this.connectionStatusIndicator) {
+            this.connectionStatusIndicator.classList.add('hidden');
+        }
+    }
+
     handleMessage(data) {
         switch (data.type) {
             case 'requestFingerprint':
@@ -1719,7 +1855,6 @@ class ChatApp {
     
     updateUserList(users, count) {
         this.onlineCount.textContent = `${count} online:`;
-        this.userList.innerHTML = '';
         
         // Get current online user IDs
         const onlineUserIds = new Set(users.map(user => user.id));
@@ -1730,22 +1865,56 @@ class ChatApp {
                 this.removeCursor(userId);
             }
         });
-        
+
+        // Get existing user tags
+        const existingTags = Array.from(this.userList.querySelectorAll('.user-tag'));
+        const existingUserIds = new Set(existingTags.map(tag => tag.getAttribute('data-user-id')));
+
+        // Remove tags for users who are no longer online
+        existingTags.forEach(tag => {
+            const userId = tag.getAttribute('data-user-id');
+            if (!onlineUserIds.has(userId)) {
+                tag.remove();
+            }
+        });
+
         users.forEach(user => {
-            const userTag = document.createElement('button');
-            userTag.className = 'user-tag clickable-username';
+            let userTag = this.userList.querySelector(`[data-user-id="${user.id}"]`);
+            
+            if (!userTag) {
+                // Create new user tag
+                userTag = document.createElement('button');
+                userTag.className = 'user-tag clickable-username';
+                userTag.setAttribute('data-user-id', user.id);
+                userTag.setAttribute('data-username', user.username);
+                
+                // Add click handler
+                userTag.addEventListener('click', (event) => {
+                    this.handleUsernameClick(user, event);
+                });
+                
+                this.userList.appendChild(userTag);
+            }
+
+            // Update user tag properties
             userTag.textContent = user.username;
             userTag.style.borderColor = user.color;
             userTag.style.color = user.color;
-            userTag.setAttribute('data-user-id', user.id);
             userTag.setAttribute('data-username', user.username);
-            
-            // Add click handler
-            userTag.addEventListener('click', (event) => {
-                this.handleUsernameClick(user, event);
-            });
-            
-            this.userList.appendChild(userTag);
+
+            // Handle tabbed-out state with smooth animation
+            const wasTabbed = userTag.classList.contains('tabbed-out');
+            const isTabbed = user.isTabbed;
+
+            if (isTabbed && !wasTabbed) {
+                // User just tabbed out - add class with animation
+                requestAnimationFrame(() => {
+                    userTag.classList.add('tabbed-out');
+                });
+            } else if (!isTabbed && wasTabbed) {
+                // User just tabbed back in - remove class with animation
+                userTag.classList.remove('tabbed-out');
+            }
         });
     }
     
@@ -1796,6 +1965,19 @@ class ChatApp {
     }
     
     logout() {
+        // Clear reconnection state
+        this.isConnected = false;
+        this.wasConnected = false;
+        this.reconnectAttempts = 0;
+        
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+        
+        this.hideConnectionStatus();
+        
+        // Continue with existing logout logic...
         // Clear saved account
         localStorage.removeItem('chatAccount');
         
@@ -1829,9 +2011,9 @@ class ChatApp {
         this.clearReply();
         this.messageElements.clear();
         
-        // Disconnect socket
+        // Disconnect socket cleanly
         if (this.socket) {
-            this.socket.close();
+            this.socket.close(1000, 'User logout'); // Clean close
             this.socket = null;
         }
         
@@ -2132,24 +2314,51 @@ class ChatApp {
             this.currentMouseX = e.clientX;
             this.currentMouseY = e.clientY;
             
-            // Throttle cursor updates for performance - reduced for smoother experience
+            // Ultra-high frequency updates for maximum smoothness (120fps)
             if (this.cursorThrottle) {
                 clearTimeout(this.cursorThrottle);
             }
             
             this.cursorThrottle = setTimeout(() => {
-                // Add viewport offset compensation for more accurate positioning
-                const rect = document.documentElement.getBoundingClientRect();
-                const adjustedX = e.clientX - rect.left + window.scrollX;
-                const adjustedY = e.clientY - rect.top + window.scrollY;
+                // Get the main content area (chatScreen) bounds
+                const chatScreen = this.chatScreen;
+                const rect = chatScreen.getBoundingClientRect();
                 
-                this.socket.send(JSON.stringify({
-                    type: 'cursor',
-                    x: adjustedX,
-                    y: adjustedY,
-                    timestamp: Date.now() // Add timestamp for interpolation
-                }));
-            }, 16); // ~60fps for ultra-smooth experience
+                // Calculate relative position within the content area as percentages
+                const relativeX = ((e.clientX - rect.left) / rect.width) * 100;
+                const relativeY = ((e.clientY - rect.top) / rect.height) * 100;
+                
+                // Calculate velocity for prediction (if we have previous position)
+                let velocityX = 0;
+                let velocityY = 0;
+                const now = Date.now();
+                
+                if (this.lastCursorTime && this.lastCursorX !== undefined) {
+                    const timeDelta = now - this.lastCursorTime;
+                    if (timeDelta > 0) {
+                        velocityX = (relativeX - this.lastCursorX) / timeDelta * 16; // Normalize to 16ms
+                        velocityY = (relativeY - this.lastCursorY) / timeDelta * 16;
+                    }
+                }
+                
+                // Store for next calculation
+                this.lastCursorX = relativeX;
+                this.lastCursorY = relativeY;
+                this.lastCursorTime = now;
+                
+                // Only send if cursor is within the content area bounds
+                if (relativeX >= 0 && relativeX <= 100 && relativeY >= 0 && relativeY <= 100) {
+                    this.socket.send(JSON.stringify({
+                        type: 'cursor',
+                        x: relativeX,
+                        y: relativeY,
+                        velocityX: velocityX,
+                        velocityY: velocityY,
+                        timestamp: now,
+                        highFrequency: true // Flag for ultra-smooth mode
+                    }));
+                }
+            }, 8); // 120fps for ultra-smooth experience
         }
     }
 
@@ -2157,8 +2366,14 @@ class ChatApp {
         const cursorId = `cursor-${data.userId}`;
         let cursor = document.getElementById(cursorId);
         
+        // Convert relative percentages to absolute positions within the content area
+        const chatScreen = this.chatScreen;
+        const rect = chatScreen.getBoundingClientRect();
+        const absoluteX = rect.left + (data.x / 100) * rect.width;
+        const absoluteY = rect.top + (data.y / 100) * rect.height;
+        
         if (!cursor) {
-            // Create new cursor
+            // Create new cursor with enhanced structure
             cursor = document.createElement('div');
             cursor.id = cursorId;
             cursor.className = 'user-cursor';
@@ -2181,48 +2396,63 @@ class ChatApp {
                 cursor.style.display = 'none';
             }
             
-            // Initialize cursor data
-            cursor.dataset.prevX = data.x;
-            cursor.dataset.prevY = data.y;
-            cursor.dataset.targetX = data.x;
-            cursor.dataset.targetY = data.y;
+            // Initialize cursor data with enhanced tracking
+            cursor.dataset.currentX = absoluteX;
+            cursor.dataset.currentY = absoluteY;
+            cursor.dataset.targetX = absoluteX;
+            cursor.dataset.targetY = absoluteY;
+            cursor.dataset.velocityX = 0;
+            cursor.dataset.velocityY = 0;
+            cursor.dataset.relativeX = data.x;
+            cursor.dataset.relativeY = data.y;
             cursor.dataset.lastUpdate = Date.now();
+            
+            // Start ultra-smooth interpolation loop
+            this.startCursorInterpolation(cursor, data.userId);
             
             this.cursors.set(data.userId, cursor);
         }
         
-        // Get previous position for smooth interpolation
-        const prevX = parseFloat(cursor.dataset.prevX) || data.x;
-        const prevY = parseFloat(cursor.dataset.prevY) || data.y;
+        // Store the relative coordinates for resize handling
+        cursor.dataset.relativeX = data.x;
+        cursor.dataset.relativeY = data.y;
+        
+        // Get current interpolated position
+        const currentX = parseFloat(cursor.dataset.currentX) || absoluteX;
+        const currentY = parseFloat(cursor.dataset.currentY) || absoluteY;
         const lastUpdate = parseInt(cursor.dataset.lastUpdate) || Date.now();
-        
-        // Calculate movement delta and speed for enhanced effects
-        const deltaX = Math.abs(data.x - prevX);
-        const deltaY = Math.abs(data.y - prevY);
-        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
         const timeDelta = Date.now() - lastUpdate;
-        const speed = timeDelta > 0 ? distance / timeDelta : 0;
         
-        // Store target position for interpolation
-        cursor.dataset.targetX = data.x;
-        cursor.dataset.targetY = data.y;
+        // Apply prediction based on velocity for ultra-responsiveness
+        let predictedX = absoluteX;
+        let predictedY = absoluteY;
+        
+        if (data.velocityX !== undefined && data.velocityY !== undefined && timeDelta > 0) {
+            // Predict where the cursor will be based on network latency and velocity
+            const latencyCompensation = Math.min(timeDelta, 100); // Cap at 100ms
+            predictedX = absoluteX + (data.velocityX * latencyCompensation * 0.5);
+            predictedY = absoluteY + (data.velocityY * latencyCompensation * 0.5);
+        }
+        
+        // Update target position with prediction
+        cursor.dataset.targetX = predictedX;
+        cursor.dataset.targetY = predictedY;
+        cursor.dataset.velocityX = data.velocityX || 0;
+        cursor.dataset.velocityY = data.velocityY || 0;
         cursor.dataset.lastUpdate = Date.now();
         
-        // Enhanced smooth animation with momentum-based easing
-        const useMomentum = distance > 5; // Use momentum for larger movements
-        const transitionDuration = useMomentum ? '0.15s' : '0.08s';
-        const easing = useMomentum ? 'cubic-bezier(0.25, 0.46, 0.45, 0.94)' : 'cubic-bezier(0.4, 0.0, 0.2, 1)';
+        // Calculate movement characteristics for enhanced effects
+        const deltaX = Math.abs(predictedX - currentX);
+        const deltaY = Math.abs(predictedY - currentY);
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const speed = timeDelta > 0 ? distance / timeDelta : 0;
         
-        cursor.style.transition = `transform ${transitionDuration} ${easing}`;
-        cursor.style.transform = `translate3d(${data.x}px, ${data.y}px, 0)`;
-        
-        // Enhanced motion blur for fast movement with better thresholds
-        const speedThreshold = useMomentum ? 0.8 : 1.2;
-        if (speed > speedThreshold) {
+        // Enhanced motion blur with ultra-smooth thresholds
+        if (speed > 0.3) {
             cursor.classList.add('moving');
             
-            // Dynamic blur intensity based on speed
-            const blurIntensity = Math.min(speed * 0.5, 2);
+            // Ultra-smooth blur with velocity-based intensity
+            const blurIntensity = Math.min(speed * 0.3, 1.5);
             cursor.style.filter = `blur(${blurIntensity}px)`;
             
             // Clear previous timeout and set new one
@@ -2230,19 +2460,11 @@ class ChatApp {
             cursor.blurTimeout = setTimeout(() => {
                 cursor.classList.remove('moving');
                 cursor.style.filter = '';
-            }, 120);
-        } else {
-            cursor.classList.remove('moving');
-            cursor.style.filter = '';
+            }, 80);
         }
         
-        // Store current position for next comparison
-        cursor.dataset.prevX = data.x;
-        cursor.dataset.prevY = data.y;
-        
-        // Enhanced typing indicator with smoother transitions
+        // Enhanced typing indicator
         if (data.isTyping) {
-            // Clear any existing timeout for this user
             const existingTimeout = this.typingTimeouts.get(data.userId);
             if (existingTimeout) {
                 clearTimeout(existingTimeout);
@@ -2250,15 +2472,13 @@ class ChatApp {
             
             cursor.classList.add('typing');
             
-            // Set timeout to remove typing indicator after inactivity
             const timeout = setTimeout(() => {
                 cursor.classList.remove('typing');
                 this.typingTimeouts.delete(data.userId);
-            }, 1500);
+            }, 1200);
             
             this.typingTimeouts.set(data.userId, timeout);
         } else {
-            // Clear timeout and remove typing class immediately when user stops typing
             const existingTimeout = this.typingTimeouts.get(data.userId);
             if (existingTimeout) {
                 clearTimeout(existingTimeout);
@@ -2272,13 +2492,13 @@ class ChatApp {
         const dot = cursor.querySelector('.cursor-dot');
         
         if (label.textContent !== data.username) {
-            label.style.transition = 'all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            label.style.transition = 'all 0.2s cubic-bezier(0.23, 1, 0.32, 1)';
             label.textContent = data.username;
         }
         
         if (dot.style.backgroundColor !== data.color) {
-            dot.style.transition = 'background-color 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
-            label.style.transition = 'background-color 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)';
+            dot.style.transition = 'background-color 0.2s cubic-bezier(0.23, 1, 0.32, 1)';
+            label.style.transition = 'background-color 0.2s cubic-bezier(0.23, 1, 0.32, 1)';
             dot.style.backgroundColor = data.color;
             label.style.backgroundColor = data.color;
         }
@@ -2288,7 +2508,7 @@ class ChatApp {
         clearTimeout(cursor.fadeTimeout);
         cursor.fadeTimeout = setTimeout(() => {
             cursor.classList.add('fading');
-        }, 3000); // Increased fade delay for better UX
+        }, 2000);
     }
 
     removeCursor(userId) {
@@ -5719,6 +5939,97 @@ class ChatApp {
             this.socket.send(JSON.stringify({
                 type: 'fingerprint',
                 fingerprint: 'fallback_' + Date.now()
+            }));
+        }
+    }
+
+    handleWindowResize() {
+        // Throttle resize updates to avoid performance issues
+        if (this.resizeThrottle) {
+            clearTimeout(this.resizeThrottle);
+        }
+        
+        this.resizeThrottle = setTimeout(() => {
+            // Update all existing cursors to their new absolute positions
+            this.cursors.forEach((cursor, userId) => {
+                // Get stored relative coordinates if available
+                const relativeX = parseFloat(cursor.dataset.relativeX) || 50; // Default to center
+                const relativeY = parseFloat(cursor.dataset.relativeY) || 50;
+                
+                // Convert to new absolute positions
+                const chatScreen = this.chatScreen;
+                const rect = chatScreen.getBoundingClientRect();
+                const absoluteX = rect.left + (relativeX / 100) * rect.width;
+                const absoluteY = rect.top + (relativeY / 100) * rect.height;
+                
+                // Update cursor position
+                cursor.style.transform = `translate3d(${absoluteX}px, ${absoluteY}px, 0)`;
+                
+                // Update stored absolute positions
+                cursor.dataset.prevX = absoluteX;
+                cursor.dataset.prevY = absoluteY;
+                cursor.dataset.targetX = absoluteX;
+                cursor.dataset.targetY = absoluteY;
+            });
+        }, 100); // Throttle to 100ms for performance
+    }
+
+    startCursorInterpolation(cursor, userId) {
+        // Ultra-smooth interpolation at 144fps using requestAnimationFrame
+        const interpolate = () => {
+            if (!this.cursors.has(userId)) {
+                return; // Stop if cursor was removed
+            }
+            
+            const currentX = parseFloat(cursor.dataset.currentX);
+            const currentY = parseFloat(cursor.dataset.currentY);
+            const targetX = parseFloat(cursor.dataset.targetX);
+            const targetY = parseFloat(cursor.dataset.targetY);
+            
+            // Ultra-smooth easing with adaptive smoothing
+            const deltaX = targetX - currentX;
+            const deltaY = targetY - currentY;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            
+            // Adaptive smoothing - faster for larger movements, ultra-smooth for small ones
+            let smoothingFactor;
+            if (distance > 100) {
+                smoothingFactor = 0.35; // Fast for large jumps
+            } else if (distance > 50) {
+                smoothingFactor = 0.25; // Medium for moderate movements
+            } else if (distance > 10) {
+                smoothingFactor = 0.15; // Smooth for small movements
+            } else if (distance > 2) {
+                smoothingFactor = 0.08; // Ultra-smooth for tiny movements
+            } else {
+                smoothingFactor = 0.05; // Extremely smooth for micro-movements
+            }
+            
+            // Apply smoothing with sub-pixel precision
+            const newX = currentX + deltaX * smoothingFactor;
+            const newY = currentY + deltaY * smoothingFactor;
+            
+            // Update position with high precision
+            cursor.dataset.currentX = newX;
+            cursor.dataset.currentY = newY;
+            
+            // Apply transform with hardware acceleration and sub-pixel rendering
+            cursor.style.transform = `translate3d(${newX.toFixed(3)}px, ${newY.toFixed(3)}px, 0)`;
+            cursor.style.willChange = 'transform';
+            
+            // Continue interpolation loop
+            requestAnimationFrame(interpolate);
+        };
+        
+        // Start the ultra-smooth interpolation loop
+        requestAnimationFrame(interpolate);
+    }
+
+    sendTabbedStatus(isTabbed) {
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(JSON.stringify({
+                type: 'tabbedStatus',
+                isTabbed: isTabbed
             }));
         }
     }

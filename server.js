@@ -202,7 +202,8 @@ function getOnlineUsers() {
         id: client.id,
         username: client.username,
         color: client.color,
-        website: client.website || ''
+        website: client.website || '',
+        isTabbed: client.isTabbed || false
     }));
     return users;
 }
@@ -220,6 +221,7 @@ function processJoin(clientId, joinMessage) {
     client.color = joinMessage.color;
     client.website = joinMessage.website || '';
     client.isTyping = false;
+    client.isTabbed = false; // Initialize as not tabbed when joining
     
     console.log(`👋 User ${joinMessage.username} joined. Sending ${chatHistory.length} messages from history`);
     
@@ -575,6 +577,21 @@ wss.on('connection', (ws, req) => {
                             x: message.x,
                             y: message.y
                         }, ws);
+                    }
+                    break;
+                    
+                case 'tabbedStatus':
+                    const tabbedClient = clients.get(clientId);
+                    if (tabbedClient) {
+                        // Update tabbed status
+                        tabbedClient.isTabbed = message.isTabbed;
+                        
+                        // Broadcast updated user list to all clients
+                        broadcast({
+                            type: 'userList',
+                            users: getOnlineUsers(),
+                            count: clients.size
+                        });
                     }
                     break;
                     
