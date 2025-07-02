@@ -5,6 +5,9 @@ const http = require('http');
 const multer = require('multer');
 const fs = require('fs');
 
+// Import the new categorized logger
+const { logEvent, logChatMessage, logDMMessage, logMessageEdit, logMessageDelete } = require('./logger');
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -140,12 +143,6 @@ function getRealIP(req) {
            req.socket.remoteAddress || 
            req.connection.remoteAddress || 
            'unknown';
-}
-
-// Helper function to format IP logging with timestamp
-function logEvent(eventType, username, ip, details = '') {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] 🌐 ${eventType} | IP: ${ip} | User: ${username || 'unknown'} ${details ? '| ' + details : ''}`);
 }
 
 // Generate unique ID for each client
@@ -363,8 +360,18 @@ wss.on('connection', (ws, req) => {
                             }
                         }
                         
+                        // Log the message with new categorized logger
+                        if (message.content) {
+                            const replyContent = message.replyTo ? message.replyTo.content : null;
+                            logChatMessage(
+                                messageClient.username, 
+                                message.content, 
+                                message.attachments?.length || 0,
+                                replyContent
+                            );
+                        }
+                        
                         // Log the message event with IP
-                        logEvent('MESSAGE', messageClient.username, messageClient.ip, `Content length: ${message.content?.length || 0} chars, Attachments: ${message.attachments?.length || 0}`);
                         
                         console.log('Received message from', messageClient.username);
                         console.log('Message content:', message.content);
@@ -418,8 +425,8 @@ wss.on('connection', (ws, req) => {
                         }
                         
                         if (targetClient) {
-                            // Log the DM event with both IPs
-                            logEvent('DM_MESSAGE', dmSender.username, dmSender.ip, `To: ${targetClient.username} (${targetClient.ip}), Content length: ${message.content?.length || 0} chars`);
+                            // Log the DM with new categorized logger
+                            logDMMessage(dmSender.username, targetClient.username, message.content);
                             
                             console.log(`DM from ${dmSender.username} (${dmSender.ip}) to ${targetClient.username} (${targetClient.ip})`);
                             
@@ -575,9 +582,6 @@ wss.on('connection', (ws, req) => {
                     console.log('🔧 Server received editMessage:', message);
                     const editClient = clients.get(clientId);
                     if (editClient) {
-                        // Log the edit attempt with IP
-                        logEvent('EDIT_MESSAGE', editClient.username, editClient.ip, `Message ID: ${message.messageId}, New content length: ${message.newContent?.length || 0} chars`);
-                        
                         console.log('🔧 Edit client found:', editClient.username);
                         // Find the message in chat history
                         const messageIndex = chatHistory.findIndex(msg => msg.id === message.messageId);
@@ -588,13 +592,15 @@ wss.on('connection', (ws, req) => {
                             console.log('🔧 Username match?', originalMessage.username === editClient.username);
                             // Only allow editing own messages
                             if (originalMessage.username === editClient.username) {
+                                // Log the edit with new categorized logger
+                                logMessageEdit(editClient.username, originalMessage.content, message.newContent);
+                                
                                 // Update the message content
                                 chatHistory[messageIndex].content = message.newContent;
                                 chatHistory[messageIndex].edited = true;
                                 chatHistory[messageIndex].editedAt = Date.now();
                                 
                                 console.log('🔧 Message updated, broadcasting edit');
-                                logEvent('EDIT_SUCCESS', editClient.username, editClient.ip, `Message ID: ${message.messageId} edited successfully`);
                                 
                                 // Broadcast the edit to all clients
                                 broadcast({
@@ -620,9 +626,6 @@ wss.on('connection', (ws, req) => {
                     console.log('🔧 Server received deleteMessage:', message);
                     const deleteClient = clients.get(clientId);
                     if (deleteClient) {
-                        // Log the delete attempt with IP
-                        logEvent('DELETE_MESSAGE', deleteClient.username, deleteClient.ip, `Message ID: ${message.messageId}`);
-                        
                         console.log('🔧 Delete client found:', deleteClient.username);
                         // Find the message in chat history
                         const messageIndex = chatHistory.findIndex(msg => msg.id === message.messageId);
@@ -633,13 +636,15 @@ wss.on('connection', (ws, req) => {
                             console.log('🔧 Username match?', originalMessage.username === deleteClient.username);
                             // Only allow deleting own messages
                             if (originalMessage.username === deleteClient.username) {
+                                // Log the deletion with new categorized logger
+                                logMessageDelete(deleteClient.username, originalMessage.content);
+                                
                                 // Mark the message as deleted
                                 chatHistory[messageIndex].content = 'message deleted by user';
                                 chatHistory[messageIndex].deleted = true;
                                 chatHistory[messageIndex].deletedAt = Date.now();
                                 
                                 console.log('🔧 Message deleted, broadcasting deletion');
-                                logEvent('DELETE_SUCCESS', deleteClient.username, deleteClient.ip, `Message ID: ${message.messageId} deleted successfully`);
                                 
                                 // Broadcast the deletion to all clients
                                 broadcast({
