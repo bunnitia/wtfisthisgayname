@@ -3178,10 +3178,10 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 20px;
-    width: 90%;
-    max-width: 600px;
-    height: 80%;
-    max-height: 500px;
+    width: 95%;
+    max-width: 1200px;
+    height: 90%;
+    max-height: 800px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -3474,10 +3474,11 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
 /* Mobile responsiveness for DM modal */
 @media (max-width: 768px) {
     .dm-container {
-        width: 95%;
-        height: 90%;
+        width: 98%;
+        height: 95%;
         max-height: none;
         border-radius: 15px;
+        max-width: none;
     }
     
     .dm-header {
