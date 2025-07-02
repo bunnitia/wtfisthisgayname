@@ -27,7 +27,7 @@
     <div id="chatScreen" class="chat-screen hidden">
         <!-- Click Me Button -->
         <div class="click-me-container">
-            <button id="clickMeButton" class="click-me-button">useful info frfr</button>
+            <button id="clickMeButton" class="click-me-button">YAY new update!</button>
         </div>
         
         <!-- User List -->
@@ -210,7 +210,7 @@
         <div class="click-me-backdrop"></div>
         <div class="click-me-container-modal">
             <div class="click-me-header">
-                <h2>useful info frfr 💀</h2>
+                <h2>YAY new update! (changelog pls)</h2>
                 <button class="close-button" id="closeClickMe">×</button>
             </div>
             
@@ -251,12 +251,13 @@
                 <!-- Changelog Tab Content -->
                 <div id="changelog-tab" class="click-me-tab-content">
                     <div class="changelog-categories">
-                        <button class="changelog-category-btn active" data-category="june22">June 22</button>
+                        <button class="changelog-category-btn" data-category="june22">June 22</button>
+                        <button class="changelog-category-btn active" data-category="july2">~July 2</button>
                         <button class="changelog-category-btn" data-category="soon">Coming Soon</button>
                     </div>
                     
                     <!-- June 22 Changelog -->
-                    <div id="june22-changelog" class="changelog-section active">
+                    <div id="june22-changelog" class="changelog-section">
                         <h3>🎉 **june 22 - the day everything went live**</h3>
                         
                         <div class="changelog-group">
@@ -296,6 +297,41 @@
                         </div>
                     </div>
                     
+                    <!-- July 2 Changelog -->
+                    <div id="july2-changelog" class="changelog-section active">
+                        <h3>✨ **~july 2 - the glow up update**</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **features**</h4>
+                            <ul>
+                                <li>🖱️ **cursors are way smoother now** (well for some users) with:
+                                    <ul>
+                                        <li>**ease out animation for laggy people**</li>
+                                        <li>**more accurate cursor locations for everyone**</li>
+                                        <li>**smoother movement**</li>
+                                    </ul>
+                                </li>
+                                <li>💬 **DM modals are bigger** - no more squinting at tiny chat windows</li>
+                                <li>🚫 **added block button that does literally nothing** - its there for moral support</li>
+                                <li>🌐 **added ip based moderation (and auto-mod)** - troublemakers beware</li>
+                                <li>🔄 **added auto-reconnection (for sigma 😎)** - no more manual refreshing when connection dies</li>
+                                <li>📎 **rewritten attachment logic** - hopefully less buggy now</li>
+                                <li>📱 **attachments dont have 1 max column anymore** - spread those files out</li>
+                                <li>👻 **dim users in online list when they're tabbed out** - see who's actually paying attention</li>
+                                <li>📜 **increased chat history limit** (but you only see last 128 messages when reconnecting so u cant backread)</li>
+                                <li>✏️ **increased chat box character limit to something** (i forgot what exactly lol)</li>
+                                <li>🎯 **many more but i forgot** - there's probably other stuff too</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🔧 **bug fixes**</h4>
+                            <ul>
+                                <li>🙈 **fixed media spoiler** - now only hides content, not entire msg</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
                     <!-- Coming Soon Changelog -->
                     <div id="soon-changelog" class="changelog-section">
                         <h3>🔮 **coming soon™** *(no eta cuz im lazy)*</h3>
@@ -306,7 +342,20 @@
                                 <li>💎 **glossy gloss** - make everything shinier</li>
                                 <li>💌 **better DMs** - current system is kinda ass ngl</li>
                                 <li>🎯 **fix external link warning** - its not even centered and it bothers me</li>
-                                <li>🙈 **fix media spoiler** - should only hide content, not the entire message</li>
+                                <li>🚀 **fix spoilers (they dont even work)** - spoiler system needs a complete rewrite</li>
+                                <li>😴 **AFK detection** - mark users as away when they're not active</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>⚡ **performance & fixes**</h4>
+                            <ul>
+                                <li>🗑️ **delete and edit messages faster** - optimize the whole system</li>
+                                <li>📎 **fix media not getting deleted when deleting a message** - cleanup is broken</li>
+                                <li>📺 **yt embeds (ez)** - youtube links should show previews</li>
+                                <li>💬 **fix problem where edited msgs show original message when u reply** - reply system is bugged</li>
+                                <li>👤 **fix problem where u can edit and delete msgs sent by another person if u have the same name as them** - security hole lmao</li>
+                                <li>🗑️ **fix problem where deleted messages look ugly when u refresh** - visual cleanup needed</li>
                             </ul>
                         </div>
                         
@@ -324,7 +373,6 @@
                                 <li>🚫 **block people** - for when someone's being extra annoying</li>
                                 <li>🔇 **fix mute system** - currently u can just relog to bypass it lmao</li>
                                 <li>⚡ **stricter anti-spam** - current system is too lenient</li>
-                                <li>🌐 **ip-based moderation** - mute/ban by IP for real troublemakers</li>
                                 <li>🗑️ **mod message deletion** - let mods clean up the chaos</li>
                                 <li>😈 **un-degenerate sigma** - whatever tf that means</li>
                                 <li>🙈 **manual media spoiler** - for when auto-spoiler is off</li>
