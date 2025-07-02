@@ -1999,7 +1999,7 @@ class ChatApp {
         
         // Clear cursor throttle
         if (this.cursorThrottle) {
-            clearTimeout(this.cursorThrottle);
+            cancelAnimationFrame(this.cursorThrottle);
             this.cursorThrottle = null;
         }
         
@@ -2314,19 +2314,22 @@ class ChatApp {
             this.currentMouseX = e.clientX;
             this.currentMouseY = e.clientY;
             
-            // Ultra-high frequency updates for maximum smoothness (120fps)
+            // Use requestAnimationFrame for consistent timing across all devices
             if (this.cursorThrottle) {
-                clearTimeout(this.cursorThrottle);
+                return; // Skip if already scheduled
             }
             
-            this.cursorThrottle = setTimeout(() => {
+            this.cursorThrottle = requestAnimationFrame(() => {
+                // Reset throttle flag
+                this.cursorThrottle = null;
+                
                 // Get the main content area (chatScreen) bounds
                 const chatScreen = this.chatScreen;
                 const rect = chatScreen.getBoundingClientRect();
                 
                 // Calculate relative position within the content area as percentages
-                const relativeX = ((e.clientX - rect.left) / rect.width) * 100;
-                const relativeY = ((e.clientY - rect.top) / rect.height) * 100;
+                const relativeX = ((this.currentMouseX - rect.left) / rect.width) * 100;
+                const relativeY = ((this.currentMouseY - rect.top) / rect.height) * 100;
                 
                 // Calculate velocity for prediction (if we have previous position)
                 let velocityX = 0;
@@ -2358,7 +2361,7 @@ class ChatApp {
                         highFrequency: true // Flag for ultra-smooth mode
                     }));
                 }
-            }, 8); // 120fps for ultra-smooth experience
+            });
         }
     }
 
