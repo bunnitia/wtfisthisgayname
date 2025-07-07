@@ -1,4 +1,4 @@
-class ChatApp {
+﻿class ChatApp {
     constructor() {
         // Initialize properties
         this.username = '';
@@ -1319,6 +1319,9 @@ class ChatApp {
                 break;
             case 'history':
                 this.loadChatHistory(data.messages);
+                break;
+            case 'sessionTakeover':
+                this.showSystemMessage('⚠️ ' + data.message);
                 break;
             case 'message':
                 this.displayMessage(data);
