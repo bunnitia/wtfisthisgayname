@@ -1320,9 +1320,6 @@
             case 'history':
                 this.loadChatHistory(data.messages);
                 break;
-            case 'sessionTakeover':
-                this.showSystemMessage('⚠️ ' + data.message);
-                break;
             case 'message':
                 this.displayMessage(data);
                 break;

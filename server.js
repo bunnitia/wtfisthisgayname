@@ -132,7 +132,6 @@ const bannedIPs = new Set(); // Store banned IP addresses
 const bannedFingerprints = new Set(); // Store banned device fingerprints
 const fingerprintToIPs = new Map(); // Track which IPs a fingerprint has used
 const ipToFingerprint = new Map(); // Track which fingerprint an IP is using
-const userSessions = new Map(); // Track active user sessions by fingerprint+username
 const MAX_MESSAGES = 128;
 const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
 
@@ -214,11 +213,8 @@ function processJoin(clientId, joinMessage) {
     const client = clients.get(clientId);
     if (!client) return;
     
-    // Check if this fingerprint + username combination already has an active session
-    const wasSessionTakeover = createUserSession(clientId, client.fingerprint, joinMessage.username, client);
-    
     // Log the join event with IP
-    logEvent('JOIN', joinMessage.username, client.ip, `Color: ${joinMessage.color}${wasSessionTakeover ? ' (session takeover)' : ''}`);
+    logEvent('JOIN', joinMessage.username, client.ip, `Color: ${joinMessage.color}`);
     
     // Update client info with join data
     client.username = joinMessage.username;
@@ -227,7 +223,7 @@ function processJoin(clientId, joinMessage) {
     client.isTyping = false;
     client.isTabbed = false; // Initialize as not tabbed when joining
     
-    console.log(`👋 User ${joinMessage.username} joined${wasSessionTakeover ? ' (took over existing session)' : ''}. Sending ${chatHistory.length} messages from history`);
+    console.log(`👋 User ${joinMessage.username} joined. Sending ${chatHistory.length} messages from history`);
     
     // Send chat history to new client
     try {
@@ -240,18 +236,6 @@ function processJoin(clientId, joinMessage) {
         console.error(`❌ Failed to send history to ${joinMessage.username}:`, error);
     }
     
-    // Send session takeover notification if applicable
-    if (wasSessionTakeover) {
-        try {
-            client.ws.send(JSON.stringify({
-                type: 'sessionTakeover',
-                message: 'Your previous session was disconnected because you connected from another tab or window.'
-            }));
-        } catch (error) {
-            console.error(`❌ Failed to send session takeover notification to ${joinMessage.username}:`, error);
-        }
-    }
-    
     // Send updated user list to all clients
     broadcast({
         type: 'userList',
@@ -259,14 +243,12 @@ function processJoin(clientId, joinMessage) {
         count: clients.size
     });
     
-    // Notify others about new user (only if not a takeover)
-    if (!wasSessionTakeover) {
-        broadcast({
-            type: 'userJoined',
-            username: joinMessage.username,
-            color: joinMessage.color
-        }, client.ws);
-    }
+    // Notify others about new user
+    broadcast({
+        type: 'userJoined',
+        username: joinMessage.username,
+        color: joinMessage.color
+    }, client.ws);
 }
 
 wss.on('connection', (ws, req) => {
@@ -928,37 +910,27 @@ wss.on('connection', (ws, req) => {
         }
     });
     
-    // Handle client disconnect
-    ws.on('close', (code, reason) => {
+    ws.on('close', () => {
         const client = clients.get(clientId);
-        if (client && client.username) {
-            console.log(`👋 User ${client.username} disconnected (code: ${code}, reason: ${reason || 'none'})`);
-            logEvent('LEAVE', client.username, client.ip, 'Disconnected');
-            
-            // Remove from user session tracking
-            removeUserSession(clientId);
-            
-            // Clear any typing indicator
-            client.isTyping = false;
+        if (client) {
+            // Log the disconnection with IP
+            logEvent('DISCONNECT', client.username, client.ip, `Client ID: ${clientId}`);
             
             // Notify others about user leaving
             broadcast({
                 type: 'userLeft',
                 username: client.username
-            }, ws);
-        } else {
-            console.log(`🔗 Anonymous client disconnected (code: ${code})`);
+            });
+            
+            clients.delete(clientId);
+            
+            // Send updated user list
+            broadcast({
+                type: 'userList',
+                users: getOnlineUsers(),
+                count: clients.size
+            });
         }
-        
-        // Remove client from tracking
-        clients.delete(clientId);
-        
-        // Send updated user list
-        broadcast({
-            type: 'userList',
-            users: getOnlineUsers(),
-            count: clients.size
-        });
     });
 });
 
@@ -1059,64 +1031,6 @@ function trackFingerprint(ip, fingerprint) {
     }
     
     return false; // Not banned
-}
-
-// Session management functions
-function getSessionKey(fingerprint, username) {
-    return `${fingerprint}:${username.toLowerCase()}`;
-}
-
-function checkExistingSession(fingerprint, username) {
-    const sessionKey = getSessionKey(fingerprint, username);
-    return userSessions.get(sessionKey);
-}
-
-function createUserSession(clientId, fingerprint, username, clientInfo) {
-    const sessionKey = getSessionKey(fingerprint, username);
-    
-    // Check if there's already an active session
-    const existingSession = userSessions.get(sessionKey);
-    if (existingSession) {
-        // Disconnect the old session
-        const oldClient = clients.get(existingSession.clientId);
-        if (oldClient && oldClient.ws && oldClient.ws.readyState === WebSocket.OPEN) {
-            logEvent('SESSION_TAKEOVER', username, clientInfo.ip, `Disconnecting old session: ${existingSession.clientId}`);
-            oldClient.ws.close(1000, 'Your session has been taken over by another connection');
-        }
-        clients.delete(existingSession.clientId);
-        
-        // Notify others about the user leaving (from old session)
-        broadcast({
-            type: 'userLeft',
-            username: username
-        });
-    }
-    
-    // Create new session
-    const sessionInfo = {
-        clientId: clientId,
-        fingerprint: fingerprint,
-        username: username,
-        ip: clientInfo.ip,
-        connectedAt: Date.now()
-    };
-    
-    userSessions.set(sessionKey, sessionInfo);
-    logEvent('SESSION_CREATED', username, clientInfo.ip, `Session key: ${sessionKey}`);
-    
-    return existingSession !== undefined; // Return true if this was a takeover
-}
-
-function removeUserSession(clientId) {
-    // Find and remove session by clientId
-    for (const [sessionKey, sessionInfo] of userSessions.entries()) {
-        if (sessionInfo.clientId === clientId) {
-            userSessions.delete(sessionKey);
-            logEvent('SESSION_REMOVED', sessionInfo.username, sessionInfo.ip, `Session key: ${sessionKey}`);
-            return sessionInfo;
-        }
-    }
-    return null;
 }
 
 // Process chat commands (for /pb and /unpb)
