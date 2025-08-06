@@ -181,7 +181,11 @@ function addDMMessage(ip1, ip2, message) {
 
 // Broadcast message to all connected clients
 function broadcast(message, excludeClient = null) {
-    const messageString = JSON.stringify(message);
+    // Create a clean copy of the message without server-only fields
+    const cleanMessage = { ...message };
+    delete cleanMessage.senderId; // Remove server-only identifier
+    
+    const messageString = JSON.stringify(cleanMessage);
     
     clients.forEach((client, clientId) => {
         if (client.ws && client.ws !== excludeClient && client.ws.readyState === WebSocket.OPEN) {
@@ -227,9 +231,16 @@ function processJoin(clientId, joinMessage) {
     
     // Send chat history to new client
     try {
+        // Clean chat history before sending (remove server-only fields)
+        const cleanHistory = chatHistory.map(msg => {
+            const cleanMsg = { ...msg };
+            delete cleanMsg.senderId; // Remove server-only identifier
+            return cleanMsg;
+        });
+        
         client.ws.send(JSON.stringify({
             type: 'history',
-            messages: chatHistory
+            messages: cleanHistory
         }));
         console.log(`✅ History sent to ${joinMessage.username}`);
     } catch (error) {
@@ -386,7 +397,8 @@ wss.on('connection', (ws, req) => {
                             username: messageClient.username,
                             color: messageClient.color,
                             content: message.content,
-                            timestamp: Date.now()
+                            timestamp: Date.now(),
+                            senderId: clientId // Store clientId for secure validation (never sent to clients)
                         };
                         
                         // Add attachments if present
@@ -606,9 +618,9 @@ wss.on('connection', (ws, req) => {
                         if (messageIndex !== -1) {
                             const originalMessage = chatHistory[messageIndex];
                             console.log('🔧 Original message:', originalMessage);
-                            console.log('🔧 Username match?', originalMessage.username === editClient.username);
-                            // Only allow editing own messages
-                            if (originalMessage.username === editClient.username) {
+                            console.log('🔧 Sender ID match?', originalMessage.senderId === clientId);
+                            // Only allow editing own messages (use senderId for security)
+                            if (originalMessage.senderId === clientId) {
                                 // Log the edit with new categorized logger
                                 logMessageEdit(editClient.username, originalMessage.content, message.newContent);
                                 
@@ -627,8 +639,8 @@ wss.on('connection', (ws, req) => {
                                     editedBy: editClient.username
                                 });
                             } else {
-                                console.log('🔧 Username mismatch, edit rejected');
-                                logEvent('EDIT_DENIED', editClient.username, editClient.ip, `Attempted to edit message from: ${originalMessage.username}`);
+                                console.log('🔧 Sender ID mismatch, edit rejected');
+                                logEvent('EDIT_DENIED', editClient.username, editClient.ip, `Attempted to edit message from different sender. Message ID: ${message.messageId}`);
                             }
                         } else {
                             console.log('🔧 Message not found in history');
@@ -650,9 +662,9 @@ wss.on('connection', (ws, req) => {
                         if (messageIndex !== -1) {
                             const originalMessage = chatHistory[messageIndex];
                             console.log('🔧 Original message:', originalMessage);
-                            console.log('🔧 Username match?', originalMessage.username === deleteClient.username);
-                            // Only allow deleting own messages
-                            if (originalMessage.username === deleteClient.username) {
+                            console.log('🔧 Sender ID match?', originalMessage.senderId === clientId);
+                            // Only allow deleting own messages (use senderId for security)
+                            if (originalMessage.senderId === clientId) {
                                 // Log the deletion with new categorized logger
                                 logMessageDelete(deleteClient.username, originalMessage.content);
                                 
@@ -670,8 +682,8 @@ wss.on('connection', (ws, req) => {
                                     deletedBy: deleteClient.username
                                 });
                             } else {
-                                console.log('🔧 Username mismatch, delete rejected');
-                                logEvent('DELETE_DENIED', deleteClient.username, deleteClient.ip, `Attempted to delete message from: ${originalMessage.username}`);
+                                console.log('🔧 Sender ID mismatch, delete rejected');
+                                logEvent('DELETE_DENIED', deleteClient.username, deleteClient.ip, `Attempted to delete message from different sender. Message ID: ${message.messageId}`);
                             }
                         } else {
                             console.log('🔧 Message not found in history');
@@ -719,7 +731,8 @@ wss.on('connection', (ws, req) => {
                         username: message.username,
                         color: fakeUserColor,
                         content: message.message,
-                        timestamp: Date.now()
+                        timestamp: Date.now(),
+                        senderId: clientId // Fake messages are sent by the user who created them
                     };
                     
                     // Add to history and maintain max size
