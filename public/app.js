@@ -3468,12 +3468,30 @@
             card.style.overflow = 'hidden';
             card.style.cursor = 'pointer';
 
+            // Ratio wrapper preserves original aspect without cropping
+            const wrap = document.createElement('div');
+            wrap.style.position = 'relative';
+            wrap.style.width = '100%';
+            wrap.style.background = '#000';
+            // Fallback aspect until image loads
+            wrap.style.aspectRatio = '4 / 3';
+
             const img = new Image();
             img.src = file.url;
             img.alt = file.originalName;
-            img.style.display = 'block';
+            img.style.position = 'absolute';
+            img.style.top = '0';
+            img.style.left = '0';
             img.style.width = '100%';
-            img.style.height = 'auto'; // preserve original ratio
+            img.style.height = '100%';
+            img.style.objectFit = 'contain';
+            img.style.display = 'block';
+            img.onload = () => {
+                const natW = img.naturalWidth || 1;
+                const natH = img.naturalHeight || 1;
+                wrap.style.aspectRatio = `${natW} / ${natH}`;
+            };
+            wrap.appendChild(img);
 
             const meta = document.createElement('div');
             meta.style.padding = '8px';
@@ -3485,11 +3503,10 @@
                 <div style="font-size:11px;opacity:.75;">by ${this.escapeHtml(file.uploader || 'unknown')}</div>
             `;
 
-            card.appendChild(img);
+            card.appendChild(wrap);
             card.appendChild(meta);
 
             card.addEventListener('click', () => {
-                // Insert filename to input and close
                 const name = file.originalName;
                 const input = this.chatInput;
                 if (input) {
