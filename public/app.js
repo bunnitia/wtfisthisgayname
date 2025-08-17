@@ -1479,6 +1479,30 @@
             }
         }
         
+        // Filename mention resolution: replace content-only filename tokens with existing attachments
+        if (cleanContent) {
+            const words = cleanContent.split(/\s+/).filter(Boolean);
+            const registry = window.attachmentRegistry || new Map();
+            const toAttachByName = [];
+            words.forEach(w => {
+                // Match as filename if present in registry values
+                for (const [id, att] of registry.entries()) {
+                    if (att && (att.originalName === w || att.filename === w)) {
+                        if (!attachments.find(a => a.url === att.url)) {
+                            attachments.push(att);
+                            toAttachByName.push(w);
+                        }
+                        break;
+                    }
+                }
+            });
+            if (toAttachByName.length > 0) {
+                // Remove only those standalone words (basic)
+                const pattern = new RegExp(`(^|\\s)(${toAttachByName.map(n=>n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')})(?=\\s|$)`, 'g');
+                cleanContent = cleanContent.replace(pattern, ' ').trim();
+            }
+        }
+
         console.log('🔍 Original content:', content);
         console.log('🔍 Clean content:', cleanContent);
         console.log('🔍 Found attachments:', attachments);
@@ -3037,6 +3061,37 @@
             const formData = new FormData();
             formData.append('files', file);
             
+            // Check duplicate by filename and prompt user
+            try {
+                const dupResp = await fetch(`/files/exists?name=${encodeURIComponent(file.name)}`);
+                if (dupResp.ok) {
+                    const dup = await dupResp.json();
+                    if (dup.exists && dup.file && dup.file.url) {
+                        const choice = await this.showDuplicateFileModal(dup.file, file);
+                        if (choice === 'existing') {
+                            const fileID = Math.random().toString(36).substr(2, 8);
+                            window.attachmentRegistry = window.attachmentRegistry || new Map();
+                            window.attachmentRegistry.set(fileID, {
+                                originalName: dup.file.originalName,
+                                filename: dup.file.filename,
+                                size: dup.file.size,
+                                type: dup.file.type,
+                                url: dup.file.url
+                            });
+                            this.pendingAttachmentIds.add(fileID);
+                            this.showInlineAttachmentTag(fileID, dup.file.originalName);
+                            // focus input and return without uploading
+                            const chatInput = document.getElementById('chatInput');
+                            chatInput.focus();
+                            return;
+                        }
+                        // else continue with upload (server will suffix to avoid collision)
+                    }
+                }
+            } catch (e) {
+                console.warn('duplicate check failed', e);
+            }
+            
             const xhr = new XMLHttpRequest();
             
             const uploadedFile = await new Promise((resolve, reject) => {
@@ -3076,7 +3131,7 @@
             
             // add inline tag (show filename, not $id$)
             this.pendingAttachmentIds.add(fileID);
-            this.showInlineAttachmentTag(fileID, uploadedFile.originalName || file.name);
+            this.showInlineAttachmentTag(fileID, uploadedFile.originalName || uploadedFile.filename || file.name);
 
             // keep UX snappy: focus input, don't inject raw $id$ tokens
             const chatInput = document.getElementById('chatInput');
@@ -3218,6 +3273,18 @@
         tag.className = 'inline-attachment-tag';
         tag.setAttribute('data-attachment-id', id);
         tag.textContent = this.truncateFilename(originalName, 24);
+        // Make tag clickable to insert by filename reference in input
+        tag.style.cursor = 'pointer';
+        tag.title = 'Click to insert filename';
+        tag.addEventListener('click', () => {
+            const input = this.chatInput;
+            if (!input) return;
+            const toInsert = originalName;
+            const current = input.value;
+            input.value = current ? current + ' ' + toInsert : toInsert;
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+        });
         container.appendChild(tag);
     }
 
@@ -3239,6 +3306,42 @@
         const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
         const keep = Math.max(4, maxLen - ext.length - 3);
         return base.slice(0, keep) + '…' + ext;
+    }
+
+    async showDuplicateFileModal(existingFile, incomingFile) {
+        return new Promise(resolve => {
+            const modal = document.createElement('div');
+            modal.className = 'file-viewer-modal show';
+            modal.innerHTML = `
+                <div class="file-viewer-content">
+                    <div class="file-viewer-header">
+                        <div class="file-viewer-title">
+                            <h3>File already exists</h3>
+                            <div class="file-viewer-size">${this.escapeHtml(existingFile.originalName)} · ${this.formatFileSize(existingFile.size)}</div>
+                        </div>
+                        <div class="file-viewer-controls">
+                            <button class="copy-content-btn" data-action="existing">Apply existing image</button>
+                            <button class="download-viewer-btn" data-action="upload">Upload my own</button>
+                            <button class="close-viewer-btn" data-action="close">✕</button>
+                        </div>
+                    </div>
+                    <div class="file-viewer-body" style="display:flex;align-items:center;justify-content:center;background:#000">
+                        <img src="${existingFile.url}" alt="preview" style="max-width:100%;max-height:70vh;object-fit:contain"/>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            const onClick = (e) => {
+                const btn = e.target.closest('button[data-action]');
+                if (!btn) return;
+                const action = btn.getAttribute('data-action');
+                modal.remove();
+                if (action === 'existing') return resolve('existing');
+                if (action === 'upload') return resolve('upload');
+                resolve('close');
+            };
+            modal.addEventListener('click', onClick, { once: true });
+        });
     }
 
     createAttachmentElement(attachment) {

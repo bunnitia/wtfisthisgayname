@@ -19,15 +19,32 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // Configure multer for file uploads
+function sanitizeFilename(name) {
+    // Keep alphanumerics, dash, underscore, dot, and spaces → replace others
+    return name.replace(/[^a-zA-Z0-9 ._\-]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function getAvailableFilename(original) {
+    const sanitized = sanitizeFilename(original) || 'file';
+    const ext = path.extname(sanitized);
+    const base = path.basename(sanitized, ext);
+    let attempt = 0;
+    let candidate;
+    do {
+        candidate = attempt === 0 ? `${base}${ext}` : `${base}-${attempt}${ext}`;
+        attempt++;
+    } while (fs.existsSync(path.join(uploadsDir, candidate)));
+    return candidate;
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, uploadsDir);
     },
     filename: (req, file, cb) => {
-        // Generate unique filename with timestamp
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
-        cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+        // Prefer original filename, sanitized; suffix if exists
+        const candidate = getAvailableFilename(file.originalname);
+        cb(null, candidate);
     }
 });
 
@@ -85,16 +102,69 @@ app.post('/upload', upload.array('files', 10), (req, res) => {
 
         const uploadedFiles = req.files.map(file => ({
             originalName: file.originalname,
-            filename: file.filename,
+            filename: file.filename, // saved name (original or suffixed)
             size: file.size,
             type: file.mimetype,
-            url: `/uploads/${file.filename}`
+            url: `/uploads/${encodeURIComponent(file.filename)}`
         }));
 
         res.json({ files: uploadedFiles });
     } catch (error) {
         console.error('Upload error:', error);
         res.status(500).json({ error: 'Upload failed' });
+    }
+});
+
+// Check if a file with given name exists
+app.get('/files/exists', (req, res) => {
+    try {
+        const name = req.query.name;
+        if (!name) return res.status(400).json({ error: 'Missing name' });
+        const sanitized = sanitizeFilename(name);
+        const filePath = path.join(uploadsDir, sanitized);
+        if (fs.existsSync(filePath)) {
+            const stat = fs.statSync(filePath);
+            return res.json({
+                exists: true,
+                file: {
+                    originalName: sanitized,
+                    filename: sanitized,
+                    size: stat.size,
+                    type: path.extname(sanitized).toLowerCase(),
+                    url: `/uploads/${encodeURIComponent(sanitized)}`
+                }
+            });
+        }
+        res.json({ exists: false });
+    } catch (e) {
+        console.error('exists error', e);
+        res.status(500).json({ error: 'Failed to check' });
+    }
+});
+
+// List all files (basic)
+app.get('/files', (req, res) => {
+    try {
+        const entries = fs.readdirSync(uploadsDir);
+        const files = entries.map(name => {
+            try {
+                const stat = fs.statSync(path.join(uploadsDir, name));
+                if (!stat.isFile()) return null;
+                return {
+                    originalName: name,
+                    filename: name,
+                    size: stat.size,
+                    type: path.extname(name).toLowerCase(),
+                    url: `/uploads/${encodeURIComponent(name)}`
+                };
+            } catch {
+                return null;
+            }
+        }).filter(Boolean);
+        res.json({ files });
+    } catch (e) {
+        console.error('files list error', e);
+        res.status(500).json({ error: 'Failed to list files' });
     }
 });
 

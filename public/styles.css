@@ -699,6 +699,20 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     gap: 8px;
 }
 
+.inline-attachment-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+    padding: 6px 10px;
+    margin-right: 6px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: #fff;
+}
+
 .attachment-preview.hidden {
     display: none !important;
 }
