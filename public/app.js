@@ -934,12 +934,16 @@
         // File upload events
         this.attachButton.addEventListener('click', () => {
             if (!this.isUploading) {
+                // Reset input so selecting the same file again triggers change
+                this.fileInput.value = '';
                 this.fileInput.click();
             }
         });
         
         this.fileInput.addEventListener('change', (e) => {
             this.handleFileSelection(e.target.files);
+            // Clear value so choosing same file again in the future fires 'change'
+            this.fileInput.value = '';
         });
         
         // Paste event for files
@@ -3087,6 +3091,9 @@
         filesArray.forEach(file => {
             this.uploadAndGenerateID(file);
         });
+        
+        // Also clear file input value here (for drop/paste safety not needed, but harmless)
+        if (this.fileInput) this.fileInput.value = '';
     }
 
     async uploadAndGenerateID(file) {
@@ -3366,42 +3373,35 @@
                 </div>
             `;
             document.body.appendChild(modal);
-            const onClick = (e) => {
-                const btn = e.target.closest('button[data-action]');
-                if (!btn) return;
-                const action = btn.getAttribute('data-action');
+
+            const cleanup = (result) => {
+                document.removeEventListener('keydown', keyHandler);
+                modal.removeEventListener('click', clickHandler);
                 modal.remove();
-                if (action === 'existing') return resolve('existing');
-                if (action === 'upload') return resolve('upload');
-                resolve('close');
+                resolve(result);
             };
-            modal.addEventListener('click', onClick, { once: true });
-            // Close if clicking outside content: default to upload
-            const outsideHandler = (e) => {
+
+            const clickHandler = (e) => {
+                const btn = e.target.closest('button[data-action]');
+                if (btn) {
+                    const action = btn.getAttribute('data-action');
+                    if (action === 'existing') return cleanup('existing');
+                    if (action === 'upload') return cleanup('upload');
+                    return cleanup('close');
+                }
+                // Click outside content defaults to upload
                 if (!e.target.closest('.file-viewer-content')) {
-                    modal.remove();
-                    resolve('upload');
+                    return cleanup('upload');
                 }
             };
-            modal.addEventListener('mousedown', outsideHandler, { once: true });
-            // Fallback timeout to avoid hanging if modal not visible
-            setTimeout(() => {
-                if (document.body.contains(modal)) {
-                    modal.remove();
-                    resolve('upload');
-                }
-            }, 15000);
-            // Keyboard support: Enter = upload, Escape = close
+
             const keyHandler = (e) => {
-                if (e.key === 'Enter') {
-                    modal.remove();
-                    resolve('upload');
-                } else if (e.key === 'Escape') {
-                    modal.remove();
-                    resolve('close');
-                }
+                if (e.key === 'Enter') return cleanup('upload');
+                if (e.key === 'Escape') return cleanup('close');
             };
-            document.addEventListener('keydown', keyHandler, { once: true });
+
+            modal.addEventListener('click', clickHandler);
+            document.addEventListener('keydown', keyHandler);
         });
     }
 
