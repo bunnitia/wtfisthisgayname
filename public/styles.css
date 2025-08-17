@@ -291,6 +291,38 @@ body {
     backdrop-filter: blur(10px);
 }
 
+/* Date separator (daily, like Discord) */
+.date-separator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 18px 0;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+    text-transform: none;
+}
+
+.date-separator::before,
+.date-separator::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2));
+}
+
+.date-separator::after {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.2), transparent);
+}
+
+.date-separator-label {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+}
+
 .chat-message.reply-message {
     margin-top: 20px;
     margin-bottom: 20px;
@@ -653,6 +685,39 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     display: flex;
     flex-direction: column;
     gap: 10px;
+}
+
+.scroll-to-bottom {
+    position: fixed;
+    right: 20px;
+    bottom: 90px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    z-index: 200;
+    transition: all 0.25s ease;
+}
+
+.scroll-to-bottom.hidden {
+    display: none !important;
+}
+
+.scroll-to-bottom:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.scroll-to-bottom:active {
+    transform: translateY(0);
 }
 
 .chat-input-row {
@@ -2139,55 +2204,7 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     transform: rotate(90deg);
 }
 
-.auto-scroll-toggle {
-    width: 40px;
-    height: 40px;
-    background: rgba(100, 255, 100, 0.15);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.4s ease;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(100, 255, 100, 0.3);
-    position: relative;
-    overflow: hidden;
-    font-size: 14px;
-}
-
-.auto-scroll-toggle:hover {
-    background: rgba(100, 255, 100, 0.25);
-    transform: translateY(-3px);
-    box-shadow: 0 6px 20px rgba(100, 255, 100, 0.2);
-}
-
-.auto-scroll-toggle.disabled {
-    background: rgba(255, 100, 100, 0.15);
-    border-color: rgba(255, 100, 100, 0.3);
-    transform: rotate(180deg);
-}
-
-.auto-scroll-toggle.disabled:hover {
-    background: rgba(255, 100, 100, 0.25);
-    transform: rotate(180deg) translateY(-2px);
-    box-shadow: 0 4px 15px rgba(255, 100, 100, 0.2);
-}
-
-.auto-scroll-toggle::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-    transition: left 0.5s ease;
-}
-
-.auto-scroll-toggle:hover::before {
-    left: 100%;
-}
+/* removed .auto-scroll-toggle styles */
 
 /* Image Modal */
 .image-modal {
@@ -2702,6 +2719,46 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     margin-top: 6px;
     line-height: 1.4;
     font-style: italic;
+}
+
+/* Inline text spoilers */
+.spoiler-text {
+    position: relative;
+    display: inline;
+    cursor: pointer;
+}
+
+.spoiler-text .spoiler-content {
+    filter: blur(6px);
+    transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+/* No label element for inline spoilers to avoid layout shift */
+
+/* For warning spoiler, tint comes from a pseudo overlay */
+
+.spoiler-text.revealed .spoiler-content,
+.spoiler-text.revealed::after {
+    filter: none;
+    background: transparent;
+}
+
+.spoiler-text::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: 0; bottom: 0;
+    background: rgba(128, 128, 128, 0.35);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+}
+
+.spoiler-text.warning-spoiler::after {
+    background: rgba(255, 59, 59, 0.35);
+}
+
+.spoiler-text.revealed::after {
+    background: transparent;
+    backdrop-filter: none;
 }
 
 /* Clickable Username Styles */
@@ -4024,6 +4081,55 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
 
 .click-me-button:hover::before {
     left: 100%;
+}
+
+.spoiler-warning-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.25s ease;
+}
+
+.spoiler-warning-modal.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+.spoiler-warning-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+}
+
+.spoiler-warning-content {
+    position: relative;
+    background: rgba(60, 0, 0, 0.8);
+    border: 1px solid rgba(255, 80, 80, 0.5);
+    border-radius: 16px;
+    padding: 24px;
+    width: 90%;
+    max-width: 420px;
+    color: #fff;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    transform: translateY(20px);
+    transition: transform 0.25s ease;
+}
+
+.spoiler-warning-modal.show .spoiler-warning-content {
+    transform: translateY(0);
+}
+
+.spoiler-warning-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 16px;
 }
 
 .spoiler-warning-buttons .cancel-btn {

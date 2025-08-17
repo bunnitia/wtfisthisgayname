@@ -27,7 +27,7 @@
     <div id="chatScreen" class="chat-screen hidden">
         <!-- Click Me Button -->
         <div class="click-me-container">
-            <button id="clickMeButton" class="click-me-button">YAY new update!</button>
+            <button id="clickMeButton" class="click-me-button">Changelog Aug ~20</button>
         </div>
         
         <!-- User List -->
@@ -60,14 +60,14 @@
                 <span class="progress-text">Uploading...</span>
             </div>
             
+            <!-- Scroll to bottom button (shown when not at bottom) -->
+            <div id="scrollToBottom" class="scroll-to-bottom hidden" title="Scroll to bottom">⬇️</div>
+
             <!-- Chat Input Row -->
             <div class="chat-input-row">
                 <button id="attachButton" class="attach-button" title="Attach files or paste from clipboard">📎</button>
-                <button id="mediaLibraryButton" class="emoji-button" title="Browse uploaded images">🖼️</button>
+                <button id="emojiButton" class="emoji-button" title="Insert emoji">😀</button>
                 <textarea id="chatInput" rows="1" placeholder="msg thing" maxlength="5000"></textarea>
-                <div class="auto-scroll-toggle" id="autoScrollToggle" title="Toggle Auto Scroll">
-                    ⬇️
-                </div>
                 <div class="settings-icon" id="settingsIcon">⚙️</div>
             </div>
         </div>
@@ -173,21 +173,27 @@
     </div>
 
     <!-- Emoji Picker Modal -->
-    <div id="mediaLibraryModal" class="emoji-picker-modal hidden">
+    <div id="emojiPickerModal" class="emoji-picker-modal hidden">
         <div class="emoji-picker-backdrop"></div>
-        <div class="emoji-picker-container" style="max-width:720px">
+        <div class="emoji-picker-container">
             <div class="emoji-picker-header">
-                <h3>Uploaded Images</h3>
-                <button class="close-button" id="closeMediaLibrary">×</button>
+                <h3>Pick an Emoji</h3>
+                <button class="close-button" id="closeEmojiPicker">×</button>
             </div>
-            <div class="emoji-picker-content" style="gap:12px;display:flex;flex-direction:column;">
-                <div style="font-size:12px;opacity:.8;">Tip: You can send an image by typing its exact file name (e.g., <code>boo.jpg</code>).</div>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                    <input id="mediaSearchInput" type="text" placeholder="Search..." style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;">
-                    <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" id="searchByUploader" checked> Uploader Name</label>
-                    <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" id="searchByFilename" checked> File Name</label>
+            <div class="emoji-picker-content">
+                <div class="emoji-categories">
+                    <button class="emoji-category active" data-category="smileys">😀</button>
+                    <button class="emoji-category" data-category="gestures">👍</button>
+                    <button class="emoji-category" data-category="animals">🐶</button>
+                    <button class="emoji-category" data-category="food">🍎</button>
+                    <button class="emoji-category" data-category="activities">⚽</button>
+                    <button class="emoji-category" data-category="objects">🔥</button>
+                    <button class="emoji-category" data-category="travel">🚗</button>
+                    <button class="emoji-category" data-category="weather">☀️</button>
                 </div>
-                <div id="mediaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:420px;overflow:auto;"></div>
+                <div class="emoji-grid" id="emojiGrid">
+                    <!-- Emojis will be populated by JavaScript -->
+                </div>
             </div>
         </div>
     </div>
@@ -233,8 +239,9 @@
                     </div>
                     
                     <div class="click-me-section">
-                        <h3>security? what security 🔓</h3>
-                        <p>u can literally duplicate ur tab and itll think ur another user with the same name. thats how shit the security on this website is. like i didnt even try to prevent that lmao</p>
+                        <h3>security? finally security 🔓 -> 🔒</h3>
+                        <p>BEFORE: u can literally duplicate ur tab and itll think ur another user with the same name. thats how shit the security on this website is. like i didnt even try to prevent that lmao</p>
+                        <p>NOW: u can no longer connect if someone online has the same name as you</p>
                     </div>
                     
                     <div class="click-me-footer">
@@ -246,7 +253,8 @@
                 <div id="changelog-tab" class="click-me-tab-content">
                     <div class="changelog-categories">
                         <button class="changelog-category-btn" data-category="june22">June 22</button>
-                        <button class="changelog-category-btn active" data-category="july2">~July 2</button>
+                        <button class="changelog-category-btn" data-category="july2">~July 2</button>
+                        <button class="changelog-category-btn active" data-category="aug20">~Aug 20</button>
                         <button class="changelog-category-btn" data-category="soon">Coming Soon</button>
                     </div>
                     
@@ -290,9 +298,9 @@
                             </ul>
                         </div>
                     </div>
-                    
+
                     <!-- July 2 Changelog -->
-                    <div id="july2-changelog" class="changelog-section active">
+                    <div id="july2-changelog" class="changelog-section">
                         <h3>✨ **~july 2 - the glow up update**</h3>
                         
                         <div class="changelog-group">
@@ -326,6 +334,60 @@
                         </div>
                     </div>
                     
+                    <!-- Aug 20 Changelog -->
+                    <div id="aug20-changelog" class="changelog-section active">
+                        <h3>✨ **~aug 20 - speed + cleanup**</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **features**</h4>
+                            <ul>
+                                <li>⚡ **faster, more reliable uploads**
+                                    <ul>
+                                        <li>uploads are quicker so ur not waiting forever</li>
+                                        <li>less likely to fail randomly</li>
+                                    </ul>
+                                </li>
+                                <li>🗂️ **file ids are gone**
+                                    <ul>
+                                        <li>to send a file quick, just type its name with the extension (example: <code>boo.jpg</code>)</li>
+                                        <li>u can see all uploads at <code>https://chatting-app-e0xz.onrender.com/uploads</code></li>
+                                    </ul>
+                                </li>
+                                <li>📜 **chat history** now shows messages from the last week instead of a flat 512 cap</li>
+                                <li>🧠 **connect flow is smarter**
+                                    <ul>
+                                        <li>names must be unique — if someone already has ur name u gotta change it to join</li>
+                                        <li>`Coming Soon` when connecting, u land on a pre-join screen with a chat summary, mentions about u (if any), and who's online</li>
+                                        <li>`Coming Soon` u can read the whole chat and change ur profile before fully joining (people can see that u connected)</li>
+                                        <li>`Coming Soon` <em>connected</em> = on the summary screen • <em>joined</em> = fully in the chat</li>
+                                    </ul>
+                                </li>
+                                <li>🧭 **auto-scroll acts like a toggle now**
+                                    <ul>
+                                        <li>scroll down = auto-scroll on</li>
+                                        <li>scroll up = auto-scroll off</li>
+                                        <li>there’s a “Scroll to bottom” button when ur not at the bottom</li>
+                                    </ul>
+                                </li>
+                                <li>😀 **emoji button removed** (it wasn’t doing much)</li>
+                                <li>`Coming Soon` 🖱️ **custom right-click menu**</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🔧 **bug fixes**</h4>
+                            <ul>
+                                <li>🧷 uploads randomly failing</li>
+                                <li>🗑️ media not deleting when its message got deleted</li>
+                                <li>✏️ replies showing the original text after a message was edited</li>
+                                <li>♻️ deleted/edited labels disappearing after reconnect</li>
+                                <li>🔒 u could edit/delete someone else’s msgs if u had the same name (fixed by forcing unique names)</li>
+                                <li>▮ redesigned <code>||spoilers||</code> and <code>||||warning spoilers||||</code></li>
+                                <li>🤖 auto-mod actually works again</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
                     <!-- Coming Soon Changelog -->
                     <div id="soon-changelog" class="changelog-section">
                         <h3>🔮 **coming soon™** *(no eta cuz im lazy)*</h3>
@@ -333,10 +395,9 @@
                         <div class="changelog-group">
                             <h4>✨ **visual improvements**</h4>
                             <ul>
-                                <li>💎 **glossy gloss** - make everything shinier</li>
+                                <li>🎨 **redesign the whole website** - make it look actually nice</li>
                                 <li>💌 **better DMs** - current system is kinda ass ngl</li>
                                 <li>🎯 **fix external link warning** - its not even centered and it bothers me</li>
-                                <li>🚀 **fix spoilers (they dont even work)** - spoiler system needs a complete rewrite</li>
                                 <li>😴 **AFK detection** - mark users as away when they're not active</li>
                             </ul>
                         </div>
@@ -344,12 +405,10 @@
                         <div class="changelog-group">
                             <h4>⚡ **performance & fixes**</h4>
                             <ul>
-                                <li>🗑️ **delete and edit messages faster** - optimize the whole system</li>
-                                <li>📎 **fix media not getting deleted when deleting a message** - cleanup is broken</li>
+                                <li>🛠️ **rewrite the entire messaging system**</li>
+                                <li>🙈 **manual spoiler + warning spoiler for files** (instead of only for text)</li>
+                                <li>🕒 **maybe show active times for users** (toggle in settings)</li>
                                 <li>📺 **yt embeds (ez)** - youtube links should show previews</li>
-                                <li>💬 **fix problem where edited msgs show original message when u reply** - reply system is bugged</li>
-                                <li>👤 **fix problem where u can edit and delete msgs sent by another person if u have the same name as them** - security hole lmao</li>
-                                <li>🗑️ **fix problem where deleted messages look ugly when u refresh** - visual cleanup needed</li>
                             </ul>
                         </div>
                         
@@ -369,8 +428,19 @@
                                 <li>⚡ **stricter anti-spam** - current system is too lenient</li>
                                 <li>🗑️ **mod message deletion** - let mods clean up the chaos</li>
                                 <li>😈 **un-degenerate sigma** - whatever tf that means</li>
-                                <li>🙈 **manual media spoiler** - for when auto-spoiler is off</li>
                                 <li>🤖 **||||sexbot||||???** - dont ask me what this means either</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🧭 **roadmap-ish**</h4>
+                            <ul>
+                                <li>🧩 **possible full website recode**
+                                    <ul>
+                                        <li>friend requests + a more DM-like interface with more DM features</li>
+                                        <li>global chat stays</li>
+                                    </ul>
+                                </li>
                             </ul>
                         </div>
                         

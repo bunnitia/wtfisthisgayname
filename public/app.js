@@ -17,6 +17,9 @@
         this.isMuted = false;
         this.muteEndTime = null;
         
+        // Track last rendered date (YYYY-MM-DD) for inserting date separators
+        this.lastRenderedDateKey = null;
+        
         // Auto-reconnection properties
         this.isConnected = false;
         this.wasConnected = false;
@@ -28,12 +31,12 @@
         
         this.currentSettings = {
             appearance: {
-                gradientColor1: '#1a1a2e',
-                gradientColor2: '#0f3460'
+                gradientColor1: '#525284',
+                gradientColor2: '#AAAAEE'
             },
             safety: {
                 censorSwears: false,
-                spoilerImages: true
+                spoilerImages: false
             },
             notifications: {
                 pingSound: true
@@ -195,6 +198,7 @@
             ':sunflower:': '🌻',
             ':rose:': '🌹',
             ':wilted_flower:': '🥀',
+            ':skull:': '💀',
             ':bouquet:': '💐',
             
             // Food & Drink
@@ -646,10 +650,8 @@
         this.loadSavedSettings();
         this.loadSavedAccount();
         
-        // Set initial auto scroll button state
-        setTimeout(() => {
-            this.updateAutoScrollButton();
-        }, 100);
+        // Initialize auto-scroll state; default on until user scrolls up
+        this.autoScrollEnabled = true;
         
         // Global click handler for modal management
         document.addEventListener('click', (e) => {
@@ -689,7 +691,7 @@
         
         // Settings elements
         this.settingsIcon = document.getElementById('settingsIcon');
-        this.autoScrollToggle = document.getElementById('autoScrollToggle');
+        this.scrollToBottomBtn = document.getElementById('scrollToBottom');
         this.settingsModal = document.getElementById('settingsModal');
         this.closeSettings = document.getElementById('closeSettings');
         this.settingsBackdrop = document.querySelector('.settings-backdrop');
@@ -710,13 +712,12 @@
         this.pingSound = document.getElementById('pingSound');
         
         // Emoji picker elements
-        this.mediaLibraryButton = document.getElementById('mediaLibraryButton');
-        this.mediaLibraryModal = document.getElementById('mediaLibraryModal');
-        this.closeMediaLibrary = document.getElementById('closeMediaLibrary');
-        this.mediaSearchInput = document.getElementById('mediaSearchInput');
-        this.mediaSearchByUploader = document.getElementById('searchByUploader');
-        this.mediaSearchByFilename = document.getElementById('searchByFilename');
-        this.mediaGrid = document.getElementById('mediaGrid');
+        this.emojiButton = document.getElementById('emojiButton');
+        this.emojiPickerModal = document.getElementById('emojiPickerModal');
+        this.closeEmojiPicker = document.getElementById('closeEmojiPicker');
+        this.emojiPickerBackdrop = document.querySelector('.emoji-picker-backdrop');
+        this.emojiGrid = document.getElementById('emojiGrid');
+        this.emojiCategories = document.querySelectorAll('.emoji-category');
         
         // Mention dropdown elements
         this.mentionDropdown = document.getElementById('mentionDropdown');
@@ -993,9 +994,15 @@
             this.openSettings();
         });
         
-        // Auto scroll toggle
-        this.autoScrollToggle.addEventListener('click', () => {
-            this.toggleAutoScroll();
+        // Scroll to bottom button
+        this.scrollToBottomBtn.addEventListener('click', () => {
+            this.enableAutoScroll();
+            this.scrollToBottom(true);
+        });
+
+        // Track scroll position to auto-enable/disable auto-scroll
+        this.chatHistory.addEventListener('scroll', () => {
+            this.handleChatScroll();
         });
         
         this.closeSettings.addEventListener('click', () => {
@@ -1073,25 +1080,25 @@
             this.handleWindowResize();
         });
         
-        // Media library events
-        if (this.mediaLibraryButton) {
-            this.mediaLibraryButton.addEventListener('click', () => {
-                this.openMediaLibrary();
+        // Emoji picker events
+        this.emojiButton.addEventListener('click', () => {
+            this.openEmojiPicker();
+        });
+
+        this.closeEmojiPicker.addEventListener('click', () => {
+            this.closeEmojiPickerModal();
+        });
+
+        this.emojiPickerBackdrop.addEventListener('click', () => {
+            this.closeEmojiPickerModal();
+        });
+
+        // Emoji category navigation
+        this.emojiCategories.forEach(category => {
+            category.addEventListener('click', () => {
+                this.switchEmojiCategory(category.dataset.category);
             });
-        }
-        if (this.closeMediaLibrary) {
-            this.closeMediaLibrary.addEventListener('click', () => {
-                this.closeMediaLibraryModal();
-            });
-        }
-        const libBackdrop = document.querySelector('#mediaLibraryModal .emoji-picker-backdrop');
-        if (libBackdrop) libBackdrop.addEventListener('click', () => this.closeMediaLibraryModal());
-        if (this.mediaSearchInput) {
-            const triggerSearch = () => this.filterMediaLibrary();
-            this.mediaSearchInput.addEventListener('input', triggerSearch);
-            this.mediaSearchByUploader.addEventListener('change', triggerSearch);
-            this.mediaSearchByFilename.addEventListener('change', triggerSearch);
-        }
+        });
         
         // Mention dropdown events
         this.mentionList.addEventListener('click', (e) => {
@@ -1328,6 +1335,9 @@
             case 'history':
                 this.loadChatHistory(data.messages);
                 break;
+            case 'usernameError':
+                this.handleUsernameError(data);
+                break;
             case 'message':
                 this.displayMessage(data);
                 break;
@@ -1378,6 +1388,16 @@
                 break;
             case 'userUpdated':
                 this.showSystemMessage(`${data.username} updated their profile`);
+                break;
+            case 'userUpdateOk':
+                // Server confirmed our update; sync local state if needed
+                if (typeof data.username === 'string') this.username = data.username;
+                if (typeof data.color === 'string') this.userColor = data.color;
+                if (typeof data.website === 'string') this.userWebsite = data.website;
+                // Persist to localStorage and reflect in login form
+                this.usernameInput.value = this.username;
+                this.colorPicker.value = this.userColor;
+                this.saveAccount();
                 break;
             case 'cursor':
                 this.updateCursor(data);
@@ -1435,6 +1455,31 @@
             case '/unspoilerimagesforeveryone':
                 this.handleUnspoilerImagesCommand();
                 break;
+        }
+    }
+
+    handleUsernameError(data) {
+        const reason = data && data.reason;
+        const attempted = data && data.attempted;
+        const msg = (data && data.message) || 'Username error';
+        alert(msg);
+        
+        if (data && data.context === 'join') {
+            // Return to login; keep the attempted name in the input for convenience
+            if (typeof attempted === 'string') {
+                this.usernameInput.value = attempted;
+            }
+            // Show login screen again
+            this.chatScreen.classList.add('hidden');
+            this.loginScreen.classList.remove('hidden');
+            try { this.socket && this.socket.close(1000, 'username taken'); } catch {}
+            this.usernameInput.focus();
+            return;
+        }
+        
+        if (data && data.context === 'update') {
+            // Revert UI inputs to the last known good username
+            this.settingsUsername.value = this.username;
         }
     }
     
@@ -1674,20 +1719,16 @@
         } else {
             this.createRegularMessage(messageElement, data);
         }
-        
+        // Insert a date separator if day changed (based on user's local time)
+        if (typeof data.timestamp === 'number') {
+            this.addDateSeparatorIfNeeded(data.timestamp);
+        }
+
         this.chatHistory.appendChild(messageElement);
         this.scrollToBottom();
-        
-        // Maintain max 128 messages
-        const messages = this.chatHistory.children;
-        if (messages.length > 5128) {
-            const removedMessage = messages[0];
-            const removedId = removedMessage.dataset.messageId;
-            if (removedId) {
-                this.messageElements.delete(removedId);
-            }
-            removedMessage.remove();
-        }
+
+        // Prune DOM to only keep messages from the last 7 days
+        this.pruneChatHistoryByTime();
     }
     
     createDMNotificationMessage(messageElement, data) {
@@ -1745,6 +1786,8 @@
             
             const replyContent = document.createElement('div');
             replyContent.className = 'reply-content';
+            // Tag with target message ID so we can live-update previews on edits
+            replyContent.setAttribute('data-reply-to-id', data.replyTo.id);
             
             const originalMessage = this.messageElements.get(data.replyTo.id);
             console.log('🔍 Original message exists in map?', !!originalMessage);
@@ -1758,8 +1801,12 @@
                 
                 const replyText = document.createElement('span');
                 replyText.className = 'reply-text';
+                // Prefer latest content from the original message element if available
+                const replySourceContent = (originalMessage && originalMessage.messageData && typeof originalMessage.messageData.content === 'string')
+                    ? originalMessage.messageData.content
+                    : data.replyTo.content;
                 // Process emojis first, then censor swear words
-                const processedReplyContent = this.processEmojis(data.replyTo.content);
+                const processedReplyContent = this.processEmojis(replySourceContent);
                 const censoredContent = this.censorSwearWords(processedReplyContent);
                 // Check plain text length for truncation
                 const plainTextLength = censoredContent.replace(/<[^>]*>/g, '').length;
@@ -1807,6 +1854,8 @@
         contentSpan.className = 'message-content';
         
         if (data.deleted) {
+            // Ensure deleted styling applies on initial render too
+            messageElement.classList.add('message-deleted');
             contentSpan.innerHTML = '<em class="message-deleted">message deleted by user</em>';
         } else {
             // Check if message contains line breaks for visual separator
@@ -1936,6 +1985,7 @@
     
     loadChatHistory(messages) {
         this.chatHistory.innerHTML = '';
+        this.lastRenderedDateKey = null;
         // Don't track unread messages for initial history load
         const wasTrackingUnread = this.isWindowFocused;
         this.isWindowFocused = true; // Temporarily disable unread tracking
@@ -1946,6 +1996,100 @@
         
         // Restore original focus state
         this.isWindowFocused = wasTrackingUnread;
+    }
+
+    // === Date separator helpers ===
+    getLocalDateKeyFromTimestamp(timestamp) {
+        try {
+            const d = new Date(timestamp);
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        } catch {
+            return null;
+        }
+    }
+
+    formatDateLabelFromTimestamp(timestamp) {
+        try {
+            const d = new Date(timestamp);
+            return d.toLocaleDateString(undefined, {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        } catch {
+            return '';
+        }
+    }
+
+    addDateSeparatorIfNeeded(timestamp) {
+        const dateKey = this.getLocalDateKeyFromTimestamp(timestamp);
+        if (!dateKey) return;
+        if (this.lastRenderedDateKey === null) {
+            // First message after a reset; set but do not insert a separator at the top
+            this.lastRenderedDateKey = dateKey;
+            return;
+        }
+        if (this.lastRenderedDateKey !== dateKey) {
+            const separator = document.createElement('div');
+            separator.className = 'date-separator';
+            const label = document.createElement('span');
+            label.className = 'date-separator-label';
+            label.textContent = this.formatDateLabelFromTimestamp(timestamp);
+            separator.appendChild(label);
+            this.chatHistory.appendChild(separator);
+            this.lastRenderedDateKey = dateKey;
+        }
+    }
+
+    pruneChatHistoryByTime() {
+        const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+        const cutoff = Date.now() - RETENTION_MS;
+        let changed = false;
+        // Remove old messages and dangling separators from the top
+        while (this.chatHistory.firstChild) {
+            const node = this.chatHistory.firstChild;
+            if (node.classList && node.classList.contains('chat-message')) {
+                const ts = node.messageData && typeof node.messageData.timestamp === 'number' ? node.messageData.timestamp : null;
+                if (ts !== null && ts < cutoff) {
+                    const removedId = node.dataset && node.dataset.messageId;
+                    if (removedId) this.messageElements.delete(removedId);
+                    node.remove();
+                    changed = true;
+                    continue;
+                }
+                break; // First message is within retention
+            }
+            if (node.classList && node.classList.contains('date-separator')) {
+                // Drop leading separators
+                node.remove();
+                changed = true;
+                continue;
+            }
+            // Stop if it's another type (system message etc.)
+            break;
+        }
+        if (changed) {
+            this.recomputeLastRenderedDateKey();
+        }
+    }
+
+    recomputeLastRenderedDateKey() {
+        // Find the last chat message and set the date key to its day
+        let node = this.chatHistory.lastElementChild;
+        while (node) {
+            if (node.classList && node.classList.contains('chat-message')) {
+                const ts = node.messageData && typeof node.messageData.timestamp === 'number' ? node.messageData.timestamp : null;
+                if (ts !== null) {
+                    this.lastRenderedDateKey = this.getLocalDateKeyFromTimestamp(ts);
+                }
+                return;
+            }
+            node = node.previousElementSibling;
+        }
+        this.lastRenderedDateKey = null;
     }
     
     updateUserList(users, count) {
@@ -2022,29 +2166,46 @@
         this.scrollToBottom();
     }
     
-    scrollToBottom() {
-        if (this.autoScrollEnabled) {
-        this.chatHistory.scrollTop = this.chatHistory.scrollHeight;
+    scrollToBottom(force = false) {
+        if (force || this.autoScrollEnabled) {
+            this.chatHistory.scrollTop = this.chatHistory.scrollHeight;
         }
     }
-    
-    toggleAutoScroll() {
-        this.autoScrollEnabled = !this.autoScrollEnabled;
-        this.updateAutoScrollButton();
-        this.saveAutoScrollSetting();
-    }
-    
-    saveAutoScrollSetting() {
-        localStorage.setItem('chatAutoScroll', JSON.stringify(this.autoScrollEnabled));
-    }
-    
-    updateAutoScrollButton() {
-        if (this.autoScrollEnabled) {
-            this.autoScrollToggle.classList.remove('disabled');
-            this.autoScrollToggle.title = 'Auto Scroll: Enabled (Click to disable)';
+
+    handleChatScroll() {
+        const nearBottom = this.isNearBottom();
+        if (nearBottom) {
+            this.enableAutoScroll();
         } else {
-            this.autoScrollToggle.classList.add('disabled');
-            this.autoScrollToggle.title = 'Auto Scroll: Disabled (Click to enable)';
+            this.disableAutoScroll();
+        }
+        this.updateScrollToBottomButton(!nearBottom);
+    }
+
+    isNearBottom() {
+        const threshold = 40; // px
+        const { scrollTop, scrollHeight, clientHeight } = this.chatHistory;
+        return scrollTop + clientHeight >= scrollHeight - threshold;
+    }
+
+    enableAutoScroll() {
+        if (!this.autoScrollEnabled) {
+            this.autoScrollEnabled = true;
+        }
+    }
+
+    disableAutoScroll() {
+        if (this.autoScrollEnabled) {
+            this.autoScrollEnabled = false;
+        }
+    }
+
+    updateScrollToBottomButton(show) {
+        if (!this.scrollToBottomBtn) return;
+        if (show) {
+            this.scrollToBottomBtn.classList.remove('hidden');
+        } else {
+            this.scrollToBottomBtn.classList.add('hidden');
         }
     }
     
@@ -2159,15 +2320,8 @@
             }
         }
         
-        // Load auto scroll setting
-        const savedAutoScroll = localStorage.getItem('chatAutoScroll');
-        if (savedAutoScroll !== null) {
-            try {
-                this.autoScrollEnabled = JSON.parse(savedAutoScroll);
-            } catch (error) {
-                console.error('Error loading auto scroll setting:', error);
-            }
-        }
+        // Auto-scroll setting now driven by scroll position; default enabled
+        this.autoScrollEnabled = true;
         
         // Load notification settings
         const savedNotifications = localStorage.getItem('chatNotifications');
@@ -2239,12 +2393,7 @@
             this.settingsUsername.value = newUsername.substring(0, 24);
             return;
         }
-        
-        // Update username in real-time
-        this.username = newUsername;
-        this.usernameInput.value = newUsername;
-        this.saveAccount();
-        
+        // Do not commit locally until server confirms; just request update
         // Send update to server
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify({
@@ -2357,26 +2506,10 @@
             alert('Please enter a valid website URL (e.g., https://example.com)');
             return;
         }
-        
-        // Update current settings
-        this.username = newUsername;
+        // Commit color and website locally; defer username until server confirms
         this.userColor = newColor;
         this.userWebsite = newWebsite;
-        
-        // Also update the login form values
-        this.usernameInput.value = newUsername;
         this.colorPicker.value = newColor;
-        
-        // Update localStorage
-        const chatAccount = {
-            username: newUsername,
-            color: newColor,
-            website: newWebsite,
-            id: this.currentUserId,
-            timestamp: Date.now()
-        };
-        
-        localStorage.setItem('chatAccount', JSON.stringify(chatAccount));
         
         // Send update to server
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -2387,16 +2520,6 @@
                 website: newWebsite
             }));
         }
-        
-        // Show success feedback
-        const originalText = this.updateAccountButton.textContent;
-        this.updateAccountButton.textContent = 'Saved!';
-        this.updateAccountButton.style.background = 'rgba(34, 197, 94, 0.4)';
-        
-        setTimeout(() => {
-            this.updateAccountButton.textContent = originalText;
-            this.updateAccountButton.style.background = 'rgba(34, 197, 94, 0.2)';
-        }, 1500);
     }
 
     handleMouseMove(e) {
@@ -2805,6 +2928,11 @@
             console.error('Invalid message data for reply');
             return;
         }
+        // Refresh with latest message data from DOM map to avoid stale content after edits
+        const latestElement = this.messageElements.get(messageData.id);
+        if (latestElement && latestElement.messageData) {
+            messageData = latestElement.messageData;
+        }
         this.replyingTo = messageData;
         this.showReplyUI();
         this.chatInput.focus();
@@ -3041,6 +3169,35 @@
                     contentSpan.appendChild(editedIndicator);
                     console.log('🔧 Added edited indicator');
                 }
+                
+                // Keep the element's bound data in sync so replies use latest content
+                if (!messageElement.messageData) {
+                    messageElement.messageData = {};
+                }
+                messageElement.messageData.content = data.newContent;
+                messageElement.messageData.edited = true;
+                messageElement.messageData.editedAt = Date.now();
+                
+                // If the currently open reply is targeting this message, update the preview
+                if (this.replyingTo && this.replyingTo.id === data.messageId && this.replyContainer) {
+                    const preview = this.replyContainer.querySelector('.reply-message-preview');
+                    if (preview) {
+                        preview.innerHTML = this.censorSwearWords(data.newContent);
+                    }
+                    // Also update the stored reply data reference
+                    this.replyingTo = messageElement.messageData;
+                }
+                
+                // Update any inline reply previews that reference this message
+                const inlineReplyPreviews = document.querySelectorAll(`.reply-content[data-reply-to-id="${data.messageId}"] .reply-text`);
+                inlineReplyPreviews.forEach(span => {
+                    const processed = this.processEmojis(data.newContent);
+                    const censored = this.censorSwearWords(processed);
+                    const plainLength = censored.replace(/<[^>]*>/g, '').length;
+                    const truncated = plainLength > 50 ? censored.substring(0, 50) + '...' : censored;
+                    const mentioned = this.processMentions(truncated);
+                    span.innerHTML = mentioned;
+                });
                 console.log('🔧 Message content updated to:', censoredContent);
             }
         }
@@ -3060,6 +3217,16 @@
                 // Mark the entire message as deleted
                 messageElement.classList.add('message-deleted');
                 
+                // Remove attachments if present and show a placeholder to indicate removal
+                const attachmentsDiv = messageElement.querySelector('.message-attachments');
+                if (attachmentsDiv) {
+                    attachmentsDiv.remove();
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'message-attachment file-deleted-placeholder';
+                    placeholder.innerHTML = '<em class="message-deleted">file deleted by user</em>';
+                    messageElement.appendChild(placeholder);
+                }
+                
                 // Remove any existing hover controls
                 const hoverControls = messageElement.querySelector('.message-hover-controls');
                 if (hoverControls) {
@@ -3073,6 +3240,12 @@
                     editContainer.remove();
                     console.log('🔧 Removed edit container');
                 }
+                
+                // Sync element data so future actions treat it as deleted
+                if (!messageElement.messageData) {
+                    messageElement.messageData = {};
+                }
+                messageElement.messageData.deleted = true;
                 
                 // Close any open modals for this message
                 this.closeMessageModal();
@@ -3103,8 +3276,6 @@
         try {
             const formData = new FormData();
             formData.append('files', file);
-            // Provide uploader name for server metadata
-            formData.append('uploader', this.username || 'unknown');
             
             // Check duplicate by filename and prompt user
             try {
@@ -3427,113 +3598,6 @@
             // Create file attachment (including unrecognized)
             return this.createFileAttachment(attachment);
         }
-    }
-
-    // Media Library
-    async openMediaLibrary() {
-        if (!this.mediaLibraryModal) return;
-        this.mediaLibraryModal.classList.remove('hidden');
-        // widen cards for better aspect support
-        if (this.mediaGrid) this.mediaGrid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(180px, 1fr))';
-        await this.loadMediaLibrary();
-        this.filterMediaLibrary();
-    }
-
-    closeMediaLibraryModal() {
-        if (!this.mediaLibraryModal) return;
-        this.mediaLibraryModal.classList.add('hidden');
-        if (this.mediaGrid) this.mediaGrid.innerHTML = '';
-    }
-
-    async loadMediaLibrary() {
-        try {
-            const res = await fetch('/files');
-            if (!res.ok) return;
-            const data = await res.json();
-            this.allMediaFiles = (data.files || []).filter(f => (f.type || '').startsWith('image/'));
-            this.renderMediaLibrary(this.allMediaFiles);
-        } catch (e) {
-            console.error('Failed to load media library', e);
-        }
-    }
-
-    renderMediaLibrary(list) {
-        if (!this.mediaGrid) return;
-        this.mediaGrid.innerHTML = '';
-        list.forEach(file => {
-            const card = document.createElement('div');
-            card.style.background = 'rgba(255,255,255,.08)';
-            card.style.border = '1px solid rgba(255,255,255,.2)';
-            card.style.borderRadius = '10px';
-            card.style.overflow = 'hidden';
-            card.style.cursor = 'pointer';
-
-            // Ratio wrapper preserves original aspect without cropping
-            const wrap = document.createElement('div');
-            wrap.style.position = 'relative';
-            wrap.style.width = '100%';
-            wrap.style.background = '#000';
-            // Fallback aspect until image loads
-            wrap.style.aspectRatio = '4 / 3';
-
-            const img = new Image();
-            img.src = file.url;
-            img.alt = file.originalName;
-            img.style.position = 'absolute';
-            img.style.top = '0';
-            img.style.left = '0';
-            img.style.width = '100%';
-            img.style.height = '100%';
-            img.style.objectFit = 'contain';
-            img.style.display = 'block';
-            img.onload = () => {
-                const natW = img.naturalWidth || 1;
-                const natH = img.naturalHeight || 1;
-                wrap.style.aspectRatio = `${natW} / ${natH}`;
-            };
-            wrap.appendChild(img);
-
-            const meta = document.createElement('div');
-            meta.style.padding = '8px';
-            meta.style.display = 'flex';
-            meta.style.flexDirection = 'column';
-            meta.style.gap = '4px';
-            meta.innerHTML = `
-                <div style="font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;">${this.escapeHtml(file.originalName)}</div>
-                <div style="font-size:11px;opacity:.75;">by ${this.escapeHtml(file.uploader || 'unknown')}</div>
-            `;
-
-            card.appendChild(wrap);
-            card.appendChild(meta);
-
-            card.addEventListener('click', () => {
-                const name = file.originalName;
-                const input = this.chatInput;
-                if (input) {
-                    input.value = input.value ? `${input.value} "${name}"` : `"${name}"`;
-                    input.focus();
-                    input.setSelectionRange(input.value.length, input.value.length);
-                }
-                this.closeMediaLibraryModal();
-            });
-            this.mediaGrid.appendChild(card);
-        });
-    }
-
-    filterMediaLibrary() {
-        if (!this.allMediaFiles) return;
-        const q = (this.mediaSearchInput?.value || '').toLowerCase().trim();
-        const byUploader = this.mediaSearchByUploader?.checked !== false;
-        const byFilename = this.mediaSearchByFilename?.checked !== false;
-        if (!q) return this.renderMediaLibrary(this.allMediaFiles);
-        const filtered = this.allMediaFiles.filter(f => {
-            const name = (f.originalName || f.filename || '').toLowerCase();
-            const uploader = (f.uploader || '').toLowerCase();
-            const nameMatch = byFilename && name.includes(q);
-            const uploaderMatch = byUploader && uploader.includes(q);
-            return nameMatch || uploaderMatch;
-        });
-        this.renderMediaLibrary(filtered);
     }
 
     // Progressive 3x3 tiled image that upgrades quality per tile
@@ -4553,16 +4617,18 @@
         // Process links first (before other markdown)
         processed = this.processLinks(processed);
         
-        // Warning spoilers: ||||text|||| -> spoiler with warning
+        // Warning spoilers: ||||text|||| -> spoiler with warning (tinted red, blurred)
         processed = processed.replace(/\|\|\|\|(.*?)\|\|\|\|/g, (match, content) => {
             const spoilerId = 'spoiler-' + Math.random().toString(36).substr(2, 9);
-            return `<span class="spoiler-text warning-spoiler" data-spoiler-id="${spoilerId}" data-content="${this.escapeHtml(content)}" onclick="chatApp.showSpoilerWarning('${spoilerId}', '${this.escapeHtml(content)}')">Click to reveal spoiler (Warning)</span>`;
+            const inner = this.escapeHtml(content);
+            return `<span class="spoiler-text warning-spoiler" data-spoiler-id="${spoilerId}" onclick="chatApp.showSpoilerWarning('${spoilerId}')"><span class="spoiler-content">${inner}</span></span>`;
         });
         
-        // Regular spoilers: ||text|| -> clickable spoiler
+        // Regular spoilers: ||text|| -> clickable spoiler (tinted gray, blurred)
         processed = processed.replace(/\|\|(.*?)\|\|/g, (match, content) => {
             const spoilerId = 'spoiler-' + Math.random().toString(36).substr(2, 9);
-            return `<span class="spoiler-text" data-spoiler-id="${spoilerId}" onclick="chatApp.revealSpoiler('${spoilerId}')">${this.escapeHtml(content)}</span>`;
+            const inner = this.escapeHtml(content);
+            return `<span class="spoiler-text" data-spoiler-id="${spoilerId}" onclick="chatApp.revealSpoiler('${spoilerId}')"><span class="spoiler-content">${inner}</span></span>`;
         });
         
         // Bold text: **text** -> <strong>text</strong>
@@ -4617,7 +4683,7 @@
     }
 
     // Show warning for spoiler with warning
-    showSpoilerWarning(spoilerId, content) {
+    showSpoilerWarning(spoilerId) {
         const spoilerElement = document.querySelector(`[data-spoiler-id="${spoilerId}"]`);
         if (!spoilerElement) return;
         
@@ -4686,11 +4752,6 @@
         this.closeSpoilerWarning();
         const spoilerElement = document.querySelector(`[data-spoiler-id="${spoilerId}"]`);
         if (spoilerElement) {
-            // Get the original content from data attribute
-            const originalContent = spoilerElement.getAttribute('data-content');
-            if (originalContent) {
-                spoilerElement.innerHTML = originalContent;
-            }
             spoilerElement.classList.add('revealed');
             spoilerElement.onclick = null; // Remove click handler
         }

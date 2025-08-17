@@ -17,23 +17,6 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
-// Simple metadata store for uploads (filename -> { uploader, originalName, uploadedAt, type })
-const metaFilePath = path.join(uploadsDir, '_meta.json');
-let uploadsMeta = {};
-try {
-    if (fs.existsSync(metaFilePath)) {
-        uploadsMeta = JSON.parse(fs.readFileSync(metaFilePath, 'utf8')) || {};
-    }
-} catch (e) {
-    uploadsMeta = {};
-}
-function saveUploadsMeta() {
-    try {
-        fs.writeFileSync(metaFilePath, JSON.stringify(uploadsMeta, null, 2));
-    } catch (e) {
-        console.error('Failed to write meta.json', e);
-    }
-}
 
 // Configure multer for file uploads
 function sanitizeFilename(name) {
@@ -164,18 +147,6 @@ app.post('/upload', upload.array('files', 10), (req, res) => {
             url: `/uploads/${encodeURIComponent(file.filename)}`
         }));
 
-        // Record uploader in metadata (if provided in multipart field 'uploader')
-        const uploader = (req.body && req.body.uploader) ? String(req.body.uploader).slice(0, 64) : 'unknown';
-        uploadedFiles.forEach(f => {
-            uploadsMeta[f.filename] = {
-                uploader,
-                originalName: f.originalName,
-                uploadedAt: Date.now(),
-                type: f.type
-            };
-        });
-        saveUploadsMeta();
-
         res.json({ files: uploadedFiles });
     } catch (error) {
         console.error('Upload error:', error);
@@ -200,8 +171,7 @@ app.get('/files/exists', (req, res) => {
                     filename: sanitized,
                     size: stat.size,
                     type,
-                    url: `/uploads/${encodeURIComponent(sanitized)}`,
-                    uploader: uploadsMeta[sanitized]?.uploader || 'unknown'
+                    url: `/uploads/${encodeURIComponent(sanitized)}`
                 }
             });
         }
@@ -226,8 +196,7 @@ app.get('/files', (req, res) => {
                     filename: name,
                     size: stat.size,
                     type,
-                    url: `/uploads/${encodeURIComponent(name)}`,
-                    uploader: uploadsMeta[name]?.uploader || 'unknown'
+                    url: `/uploads/${encodeURIComponent(name)}`
                 };
             } catch {
                 return null;
@@ -237,6 +206,89 @@ app.get('/files', (req, res) => {
     } catch (e) {
         console.error('files list error', e);
         res.status(500).json({ error: 'Failed to list files' });
+    }
+});
+
+// Human-friendly uploads gallery at /uploads (HTML)
+app.get(['/uploads', '/uploads/'], (req, res) => {
+    try {
+        // Helper to escape HTML entities in filenames
+        function escapeHtml(input) {
+            return String(input)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        const entries = fs.readdirSync(uploadsDir);
+        const files = entries.map(name => {
+            try {
+                const filePath = path.join(uploadsDir, name);
+                const stat = fs.statSync(filePath);
+                if (!stat.isFile()) return null;
+                const ext = path.extname(name).toLowerCase();
+                const type = guessMime(ext);
+                return {
+                    name,
+                    url: `/uploads/${encodeURIComponent(name)}`,
+                    type,
+                    mtimeMs: stat.mtimeMs
+                };
+            } catch {
+                return null;
+            }
+        }).filter(Boolean)
+          // Newest first
+          .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+        const items = files.map(file => {
+            const safeName = escapeHtml(file.name);
+            const isImage = file.type.startsWith('image/');
+            const isVideo = file.type.startsWith('video/');
+            if (isImage) {
+                return `<a class="item" href="${file.url}" target="_blank" title="${safeName}"><img loading="lazy" src="${file.url}" alt="${safeName}"></a>`;
+            }
+            if (isVideo) {
+                return `<a class="item" href="${file.url}" target="_blank" title="${safeName}"><video preload="metadata" controls src="${file.url}"></video></a>`;
+            }
+            // Non-media: show as a filename link
+            return `<a class="item file" href="${file.url}" target="_blank" title="${safeName}"><span class="filename">${safeName}</span></a>`;
+        }).join('\n');
+
+        const html = `<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Uploads</title>
+    <style>
+        :root { color-scheme: dark light; }
+        body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #0b0b0c; color: #eaeaea; }
+        header { position: sticky; top: 0; padding: 14px 20px; background: #0f0f12; border-bottom: 1px solid #23232a; z-index: 10; }
+        header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.3px; }
+        .grid { padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+        .item { display: block; border: 1px solid #22232a; border-radius: 10px; background: #121218; overflow: hidden; text-decoration: none; color: inherit; }
+        .item img, .item video { width: 100%; height: 220px; object-fit: cover; display: block; background: #0f0f14; }
+        .item.file { display: flex; align-items: center; justify-content: center; height: 220px; font-size: 13px; padding: 10px; text-align: center; word-break: break-all; }
+        .item:hover { border-color: #3a3b46; }
+        footer { padding: 14px 20px; border-top: 1px solid #23232a; color: #aaa; font-size: 12px; }
+    </style>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'unsafe-inline' 'self';">
+</head>
+<body>
+    <header><h1>Uploads</h1></header>
+    <main class="grid">${items || '<div style="opacity:.7;">No uploads yet</div>'}</main>
+    <footer>Serving ${files.length} file${files.length === 1 ? '' : 's'}</footer>
+</body>
+</html>`;
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+    } catch (e) {
+        console.error('uploads gallery error', e);
+        res.status(500).send('Failed to render uploads');
     }
 });
 
@@ -276,6 +328,7 @@ const fingerprintToIPs = new Map(); // Track which IPs a fingerprint has used
 const ipToFingerprint = new Map(); // Track which fingerprint an IP is using
 const MAX_MESSAGES = 128;
 const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
+const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // Keep last 7 days of global chat
 
 // Helper function to get real IP address (handles proxies/load balancers)
 function getRealIP(req) {
@@ -290,6 +343,14 @@ function getRealIP(req) {
 // Generate unique ID for each client
 function generateId() {
     return Math.random().toString(36).substr(2, 9);
+}
+
+// Prune global chat history to keep only the last 7 days
+function pruneChatHistory() {
+    const cutoff = Date.now() - HISTORY_RETENTION_MS;
+    while (chatHistory.length > 0 && (chatHistory[0].timestamp || 0) < cutoff) {
+        chatHistory.shift();
+    }
 }
 
 // Create DM conversation key from two IPs (sorted for consistency)
@@ -354,16 +415,47 @@ function getOnlineUsers() {
     return users;
 }
 
+// Check if a username is already taken (case-insensitive), excluding a specific clientId
+function isUsernameTaken(desiredUsername, excludeClientId = null) {
+    if (!desiredUsername || typeof desiredUsername !== 'string') return false;
+    const desired = desiredUsername.trim().toLowerCase();
+    if (!desired) return false;
+    for (const [id, client] of clients.entries()) {
+        if (excludeClientId && id === excludeClientId) continue;
+        const name = (client.username || '').trim().toLowerCase();
+        if (name && name === desired) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Process join request (called after fingerprint verification)
 function processJoin(clientId, joinMessage) {
     const client = clients.get(clientId);
     if (!client) return;
     
-    // Log the join event with IP
-    logEvent('JOIN', joinMessage.username, client.ip, `Color: ${joinMessage.color}`);
+    const desiredUsername = (joinMessage.username || '').trim();
+    if (isUsernameTaken(desiredUsername, clientId)) {
+        try {
+            if (client.ws && client.ws.readyState === WebSocket.OPEN) {
+                client.ws.send(JSON.stringify({
+                    type: 'usernameError',
+                    context: 'join',
+                    reason: 'taken',
+                    attempted: desiredUsername,
+                    message: 'Username already taken. Please choose a different one.'
+                }));
+            }
+        } catch {}
+        return; // Do not proceed with join
+    }
+    
+    // Log the join event with IP (only after passing validation)
+    logEvent('JOIN', desiredUsername, client.ip, `Color: ${joinMessage.color}`);
     
     // Update client info with join data
-    client.username = joinMessage.username;
+    client.username = desiredUsername;
     client.color = joinMessage.color;
     client.website = joinMessage.website || '';
     client.isTyping = false;
@@ -373,8 +465,10 @@ function processJoin(clientId, joinMessage) {
     
     // Send chat history to new client
     try {
-        // Clean chat history before sending (remove server-only fields)
-        const cleanHistory = chatHistory.map(msg => {
+        // Filter to last 7 days and clean (remove server-only fields)
+        const cutoff = Date.now() - HISTORY_RETENTION_MS;
+        const recentHistory = chatHistory.filter(msg => (msg.timestamp || 0) >= cutoff);
+        const cleanHistory = recentHistory.map(msg => {
             const cleanMsg = { ...msg };
             delete cleanMsg.senderId; // Remove server-only identifier
             return cleanMsg;
@@ -557,11 +651,9 @@ wss.on('connection', (ws, req) => {
                         
                         console.log('Broadcasting message:', chatMessage);
                         
-                        // Add to history and maintain max size
+                        // Add to history and prune by time window
                         chatHistory.push(chatMessage);
-                        if (chatHistory.length > MAX_MESSAGES) {
-                            chatHistory.shift(); // Remove oldest message
-                        }
+                        pruneChatHistory();
                         
                         // Broadcast to all clients
                         broadcast(chatMessage);
@@ -695,11 +787,40 @@ wss.on('connection', (ws, req) => {
                         // Log the user update with IP
                         logEvent('USER_UPDATE', updateClient.username, updateClient.ip, `New username: ${message.username}, New color: ${message.color}`);
                         
+                        // Enforce unique usernames (case-insensitive), excluding this client
+                        const desiredUsername = (message.username || '').trim();
+                        if (isUsernameTaken(desiredUsername, clientId)) {
+                            try {
+                                if (updateClient.ws && updateClient.ws.readyState === WebSocket.OPEN) {
+                                    updateClient.ws.send(JSON.stringify({
+                                        type: 'usernameError',
+                                        context: 'update',
+                                        reason: 'taken',
+                                        attempted: desiredUsername,
+                                        message: 'Username already taken. Please choose a different one.'
+                                    }));
+                                }
+                            } catch {}
+                            break;
+                        }
+                        
                         // Update stored client info
                         updateClient.username = message.username;
                         updateClient.color = message.color;
                         updateClient.website = message.website || '';
                         
+                        // Send confirmation of successful update back to the updater
+                        try {
+                            if (updateClient.ws && updateClient.ws.readyState === WebSocket.OPEN) {
+                                updateClient.ws.send(JSON.stringify({
+                                    type: 'userUpdateOk',
+                                    username: updateClient.username,
+                                    color: updateClient.color,
+                                    website: updateClient.website || ''
+                                }));
+                            }
+                        } catch {}
+
                         // Broadcast updated user list to all clients
                         broadcast({
                             type: 'userList',
@@ -814,6 +935,54 @@ wss.on('connection', (ws, req) => {
                                 chatHistory[messageIndex].content = 'message deleted by user';
                                 chatHistory[messageIndex].deleted = true;
                                 chatHistory[messageIndex].deletedAt = Date.now();
+
+                                // Attempt to remove any attached files if they are not referenced elsewhere
+                                try {
+                                    if (Array.isArray(originalMessage.attachments) && originalMessage.attachments.length > 0) {
+                                        const attachmentsToCheck = originalMessage.attachments;
+                                        const isFileReferencedElsewhere = (filename) => {
+                                            // Check global chat history
+                                            for (let i = 0; i < chatHistory.length; i++) {
+                                                if (i === messageIndex) continue; // skip the message being deleted
+                                                const msg = chatHistory[i];
+                                                if (!msg || !Array.isArray(msg.attachments) || msg.deleted) continue;
+                                                if (msg.attachments.some(att => (att.filename || decodeURIComponent((att.url || '').split('/').pop() || '')) === filename)) {
+                                                    return true;
+                                                }
+                                            }
+                                            // Check DM histories
+                                            for (const conv of dmHistory.values()) {
+                                                for (const dm of conv) {
+                                                    if (!dm || !Array.isArray(dm.attachments)) continue;
+                                                    if (dm.attachments.some(att => (att.filename || decodeURIComponent((att.url || '').split('/').pop() || '')) === filename)) {
+                                                        return true;
+                                                    }
+                                                }
+                                            }
+                                            return false;
+                                        };
+
+                                        for (const att of attachmentsToCheck) {
+                                            const filename = att.filename || decodeURIComponent((att.url || '').split('/').pop() || '');
+                                            if (!filename) continue;
+                                            if (!isFileReferencedElsewhere(filename)) {
+                                                const filePath = path.join(uploadsDir, filename);
+                                                try {
+                                                    if (fs.existsSync(filePath)) {
+                                                        fs.unlinkSync(filePath);
+                                                        console.log('🗑️ Deleted attachment file:', filePath);
+                                                    }
+                                                } catch (err) {
+                                                    console.warn('⚠️ Failed to delete attachment file:', filePath, err);
+                                                }
+                                            } else {
+                                                console.log('ℹ️ Attachment still referenced elsewhere, not deleting:', filename);
+                                            }
+                                        }
+                                    }
+                                } catch (fileErr) {
+                                    console.warn('⚠️ Error while processing attachment deletion:', fileErr);
+                                }
                                 
                                 console.log('🔧 Message deleted, broadcasting deletion');
                                 
@@ -877,11 +1046,9 @@ wss.on('connection', (ws, req) => {
                         senderId: clientId // Fake messages are sent by the user who created them
                     };
                     
-                    // Add to history and maintain max size
+                    // Add to history and prune by time window
                     chatHistory.push(fakeMessageData);
-                    if (chatHistory.length > MAX_MESSAGES) {
-                        chatHistory.shift();
-                    }
+                    pruneChatHistory();
                     
                     // Broadcast to all clients
                     broadcast(fakeMessageData);
