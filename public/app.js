@@ -3503,109 +3503,82 @@
         this.renderMediaLibrary(filtered);
     }
 
-    // Progressive 3x3 tiled image that upgrades quality per tile
+    // Progressive draw on a single canvas while preserving original aspect ratio (no cropping)
     createProgressiveTiledImage(attachment) {
         const container = document.createElement('div');
         container.className = 'message-image-attachment';
-        const grid = document.createElement('div');
-        grid.className = 'tiled-image-grid';
-        container.appendChild(grid);
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'progressive-wrapper';
+        wrapper.style.position = 'relative';
+        wrapper.style.width = '100%';
+        wrapper.style.borderRadius = '12px';
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'progressive-canvas';
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
+        canvas.style.display = 'block';
+        canvas.style.borderRadius = '12px';
+        const ctx = canvas.getContext('2d');
 
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.src = attachment.url;
         img.alt = attachment.originalName;
 
-        // Prepare 3x3 tiles of canvas elements
-        const tiles = [];
-        for (let row = 0; row < 3; row++) {
-            for (let col = 0; col < 3; col++) {
-                const tileWrapper = document.createElement('div');
-                tileWrapper.className = 'tiled-tile';
-                const canvas = document.createElement('canvas');
-                canvas.className = 'tile-canvas';
-                tileWrapper.appendChild(canvas);
-                grid.appendChild(tileWrapper);
-                tiles.push({ row, col, canvas, wrapper: tileWrapper, qualityIndex: 0 });
-            }
-        }
-
         const qualitySteps = [0.06, 0.12, 0.2, 0.34, 0.5, 0.75, 1];
+        let stepIndex = 0;
 
-        const drawTileAtQuality = (tile, naturalW, naturalH) => {
-            const { row, col, canvas, wrapper } = tile;
-            // Determine tile source rect from original image
-            const sx = Math.floor((naturalW / 3) * col);
-            const sy = Math.floor((naturalH / 3) * row);
-            const sw = Math.ceil(naturalW / 3);
-            const sh = Math.ceil(naturalH / 3);
+        const redraw = (naturalW, naturalH) => {
+            const step = qualitySteps[Math.min(stepIndex, qualitySteps.length - 1)];
+            // Determine final canvas size based on container width and aspect ratio
+            // Use natural ratio; height derived from width
+            const displayWidth = canvas.clientWidth || container.clientWidth || naturalW;
+            const displayHeight = Math.max(1, Math.round(displayWidth * (naturalH / naturalW)));
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
 
-            // Canvas size based on container computed size
-            const tileRect = wrapper.getBoundingClientRect();
-            const targetW = Math.max(1, Math.floor(tileRect.width));
-            const targetH = Math.max(1, Math.floor(tileRect.height));
-            canvas.width = targetW;
-            canvas.height = targetH;
-
-            const step = qualitySteps[Math.min(tile.qualityIndex, qualitySteps.length - 1)];
-            // Render to tiny offscreen canvas first to create pixelated upscale
-            const offW = Math.max(1, Math.floor(targetW * step));
-            const offH = Math.max(1, Math.floor(targetH * step));
+            const offW = Math.max(1, Math.round(displayWidth * step));
+            const offH = Math.max(1, Math.round(displayHeight * step));
             const off = document.createElement('canvas');
             off.width = offW;
             off.height = offH;
             const offCtx = off.getContext('2d');
             offCtx.imageSmoothingEnabled = true;
-            // Draw source tile scaled down
-            offCtx.drawImage(img, sx, sy, sw, sh, 0, 0, offW, offH);
-
-            const ctx = canvas.getContext('2d');
+            offCtx.drawImage(img, 0, 0, naturalW, naturalH, 0, 0, offW, offH);
             ctx.imageSmoothingEnabled = false;
-            // Animate a quick unblur effect
-            wrapper.classList.add('quality-upgrade');
-            ctx.clearRect(0, 0, targetW, targetH);
-            ctx.drawImage(off, 0, 0, offW, offH, 0, 0, targetW, targetH);
-            // Remove class after animation frame to allow re-adding on next upgrade
-            requestAnimationFrame(() => wrapper.classList.remove('quality-upgrade'));
+            ctx.clearRect(0, 0, displayWidth, displayHeight);
+            ctx.drawImage(off, 0, 0, offW, offH, 0, 0, displayWidth, displayHeight);
         };
 
-        const upgradeCycle = () => {
-            let progressed = false;
-            for (const tile of tiles) {
-                if (tile.qualityIndex < qualitySteps.length - 1) {
-                    tile.qualityIndex++;
-                    progressed = true;
-                }
-            }
-            if (!progressed) return; // Finished
-            // Redraw all tiles at their new quality
-            for (const tile of tiles) {
-                drawTileAtQuality(tile, img.naturalWidth, img.naturalHeight);
-            }
-            requestAnimationFrame(upgradeCycle);
+        const upgradeCycle = (naturalW, naturalH) => {
+            if (stepIndex >= qualitySteps.length - 1) return; // finished
+            stepIndex++;
+            redraw(naturalW, naturalH);
+            requestAnimationFrame(() => upgradeCycle(naturalW, naturalH));
         };
 
         img.addEventListener('load', () => {
-            // Initial very low quality draw
-            for (const tile of tiles) {
-                tile.qualityIndex = 0;
-                drawTileAtQuality(tile, img.naturalWidth, img.naturalHeight);
-            }
-            // Kick off continuous upgrades with no artificial delays
-            requestAnimationFrame(upgradeCycle);
+            const naturalW = img.naturalWidth || img.width;
+            const naturalH = img.naturalHeight || img.height;
+            // Preserve original ratio for the wrapper
+            wrapper.style.aspectRatio = `${naturalW} / ${naturalH}`;
+            // Initial low-quality draw then refine
+            stepIndex = 0;
+            redraw(naturalW, naturalH);
+            requestAnimationFrame(() => upgradeCycle(naturalW, naturalH));
             this.scrollToBottom();
         });
 
-        // Click to open modal with full image
-        container.addEventListener('click', () => {
-            this.openImageModal(attachment);
-        });
+        wrapper.appendChild(canvas);
+        container.appendChild(wrapper);
 
-        // Apply spoiler if setting is enabled
+        container.addEventListener('click', () => this.openImageModal(attachment));
+
         if (this.shouldSpoilerAttachment(attachment)) {
             return this.createSpoilerWrapper(container, attachment);
         }
-
         return container;
     }
 
