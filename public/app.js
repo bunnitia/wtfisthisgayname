@@ -1481,25 +1481,40 @@
         
         // Filename mention resolution: replace content-only filename tokens with existing attachments
         if (cleanContent) {
-            const words = cleanContent.split(/\s+/).filter(Boolean);
-            const registry = window.attachmentRegistry || new Map();
-            const toAttachByName = [];
-            words.forEach(w => {
-                // Match as filename if present in registry values
-                for (const [id, att] of registry.entries()) {
-                    if (att && (att.originalName === w || att.filename === w)) {
-                        if (!attachments.find(a => a.url === att.url)) {
-                            attachments.push(att);
-                            toAttachByName.push(w);
+            const foundNames = new Set();
+            // Quoted filenames: "some file name.jpg"
+            const quotedMatches = [...cleanContent.matchAll(/\"([^\"\n]+\.[a-zA-Z0-9]{1,8})\"/g)];
+            quotedMatches.forEach(m => foundNames.add(m[1]));
+            // Bare tokens with extension
+            const bareMatches = [...cleanContent.matchAll(/(?<!\S)([^\s]+\.[a-zA-Z0-9]{1,8})(?!\S)/g)];
+            bareMatches.forEach(m => foundNames.add(m[1]));
+            const names = Array.from(foundNames);
+            if (names.length > 0) {
+                const registry = window.attachmentRegistry || new Map();
+                const attachedNames = [];
+                names.forEach(n => {
+                    for (const [, att] of registry.entries()) {
+                        if (att && (att.originalName === n || att.filename === n)) {
+                            if (!attachments.find(a => a.url === att.url)) {
+                                attachments.push(att);
+                                attachedNames.push(n);
+                            }
+                            break;
                         }
-                        break;
                     }
+                });
+                if (attachedNames.length > 0) {
+                    // remove quoted occurrences first
+                    attachedNames.forEach(n => {
+                        const quotedRe = new RegExp(`\\"${n.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}\\"`, 'g');
+                        cleanContent = cleanContent.replace(quotedRe, ' ').trim();
+                    });
+                    // remove bare tokens
+                    attachedNames.forEach(n => {
+                        const bareRe = new RegExp(`(^|\\s)${n.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}(?=\\s|$)`, 'g');
+                        cleanContent = cleanContent.replace(bareRe, ' ').trim();
+                    });
                 }
-            });
-            if (toAttachByName.length > 0) {
-                // Remove only those standalone words (basic)
-                const pattern = new RegExp(`(^|\\s)(${toAttachByName.map(n=>n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')})(?=\\s|$)`, 'g');
-                cleanContent = cleanContent.replace(pattern, ' ').trim();
             }
         }
 
