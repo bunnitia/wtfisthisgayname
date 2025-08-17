@@ -2282,6 +2282,11 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     transform: scale(1);
 }
 
+/* Duplicate file modal minimal adjustments */
+.file-viewer-modal .file-viewer-content {
+    max-width: 720px;
+}
+
 .file-viewer-header {
     display: flex;
     justify-content: space-between;

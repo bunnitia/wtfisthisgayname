@@ -3341,6 +3341,32 @@
                 resolve('close');
             };
             modal.addEventListener('click', onClick, { once: true });
+            // Close if clicking outside content: default to upload
+            const outsideHandler = (e) => {
+                if (!e.target.closest('.file-viewer-content')) {
+                    modal.remove();
+                    resolve('upload');
+                }
+            };
+            modal.addEventListener('mousedown', outsideHandler, { once: true });
+            // Fallback timeout to avoid hanging if modal not visible
+            setTimeout(() => {
+                if (document.body.contains(modal)) {
+                    modal.remove();
+                    resolve('upload');
+                }
+            }, 15000);
+            // Keyboard support: Enter = upload, Escape = close
+            const keyHandler = (e) => {
+                if (e.key === 'Enter') {
+                    modal.remove();
+                    resolve('upload');
+                } else if (e.key === 'Escape') {
+                    modal.remove();
+                    resolve('close');
+                }
+            };
+            document.addEventListener('keydown', keyHandler, { once: true });
         });
     }
 
