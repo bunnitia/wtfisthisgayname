@@ -17,6 +17,23 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
+// Simple metadata store for uploads (filename -> { uploader, originalName, uploadedAt, type })
+const metaFilePath = path.join(uploadsDir, '_meta.json');
+let uploadsMeta = {};
+try {
+    if (fs.existsSync(metaFilePath)) {
+        uploadsMeta = JSON.parse(fs.readFileSync(metaFilePath, 'utf8')) || {};
+    }
+} catch (e) {
+    uploadsMeta = {};
+}
+function saveUploadsMeta() {
+    try {
+        fs.writeFileSync(metaFilePath, JSON.stringify(uploadsMeta, null, 2));
+    } catch (e) {
+        console.error('Failed to write meta.json', e);
+    }
+}
 
 // Configure multer for file uploads
 function sanitizeFilename(name) {
@@ -147,6 +164,18 @@ app.post('/upload', upload.array('files', 10), (req, res) => {
             url: `/uploads/${encodeURIComponent(file.filename)}`
         }));
 
+        // Record uploader in metadata (if provided in multipart field 'uploader')
+        const uploader = (req.body && req.body.uploader) ? String(req.body.uploader).slice(0, 64) : 'unknown';
+        uploadedFiles.forEach(f => {
+            uploadsMeta[f.filename] = {
+                uploader,
+                originalName: f.originalName,
+                uploadedAt: Date.now(),
+                type: f.type
+            };
+        });
+        saveUploadsMeta();
+
         res.json({ files: uploadedFiles });
     } catch (error) {
         console.error('Upload error:', error);
@@ -171,7 +200,8 @@ app.get('/files/exists', (req, res) => {
                     filename: sanitized,
                     size: stat.size,
                     type,
-                    url: `/uploads/${encodeURIComponent(sanitized)}`
+                    url: `/uploads/${encodeURIComponent(sanitized)}`,
+                    uploader: uploadsMeta[sanitized]?.uploader || 'unknown'
                 }
             });
         }
@@ -196,7 +226,8 @@ app.get('/files', (req, res) => {
                     filename: name,
                     size: stat.size,
                     type,
-                    url: `/uploads/${encodeURIComponent(name)}`
+                    url: `/uploads/${encodeURIComponent(name)}`,
+                    uploader: uploadsMeta[name]?.uploader || 'unknown'
                 };
             } catch {
                 return null;

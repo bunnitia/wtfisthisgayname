@@ -710,12 +710,13 @@
         this.pingSound = document.getElementById('pingSound');
         
         // Emoji picker elements
-        this.emojiButton = document.getElementById('emojiButton');
-        this.emojiPickerModal = document.getElementById('emojiPickerModal');
-        this.closeEmojiPicker = document.getElementById('closeEmojiPicker');
-        this.emojiPickerBackdrop = document.querySelector('.emoji-picker-backdrop');
-        this.emojiGrid = document.getElementById('emojiGrid');
-        this.emojiCategories = document.querySelectorAll('.emoji-category');
+        this.mediaLibraryButton = document.getElementById('mediaLibraryButton');
+        this.mediaLibraryModal = document.getElementById('mediaLibraryModal');
+        this.closeMediaLibrary = document.getElementById('closeMediaLibrary');
+        this.mediaSearchInput = document.getElementById('mediaSearchInput');
+        this.mediaSearchByUploader = document.getElementById('searchByUploader');
+        this.mediaSearchByFilename = document.getElementById('searchByFilename');
+        this.mediaGrid = document.getElementById('mediaGrid');
         
         // Mention dropdown elements
         this.mentionDropdown = document.getElementById('mentionDropdown');
@@ -1072,25 +1073,25 @@
             this.handleWindowResize();
         });
         
-        // Emoji picker events
-        this.emojiButton.addEventListener('click', () => {
-            this.openEmojiPicker();
-        });
-
-        this.closeEmojiPicker.addEventListener('click', () => {
-            this.closeEmojiPickerModal();
-        });
-
-        this.emojiPickerBackdrop.addEventListener('click', () => {
-            this.closeEmojiPickerModal();
-        });
-
-        // Emoji category navigation
-        this.emojiCategories.forEach(category => {
-            category.addEventListener('click', () => {
-                this.switchEmojiCategory(category.dataset.category);
+        // Media library events
+        if (this.mediaLibraryButton) {
+            this.mediaLibraryButton.addEventListener('click', () => {
+                this.openMediaLibrary();
             });
-        });
+        }
+        if (this.closeMediaLibrary) {
+            this.closeMediaLibrary.addEventListener('click', () => {
+                this.closeMediaLibraryModal();
+            });
+        }
+        const libBackdrop = document.querySelector('#mediaLibraryModal .emoji-picker-backdrop');
+        if (libBackdrop) libBackdrop.addEventListener('click', () => this.closeMediaLibraryModal());
+        if (this.mediaSearchInput) {
+            const triggerSearch = () => this.filterMediaLibrary();
+            this.mediaSearchInput.addEventListener('input', triggerSearch);
+            this.mediaSearchByUploader.addEventListener('change', triggerSearch);
+            this.mediaSearchByFilename.addEventListener('change', triggerSearch);
+        }
         
         // Mention dropdown events
         this.mentionList.addEventListener('click', (e) => {
@@ -3424,6 +3425,82 @@
             // Create file attachment (including unrecognized)
             return this.createFileAttachment(attachment);
         }
+    }
+
+    // Media Library
+    async openMediaLibrary() {
+        if (!this.mediaLibraryModal) return;
+        this.mediaLibraryModal.classList.remove('hidden');
+        await this.loadMediaLibrary();
+        this.filterMediaLibrary();
+    }
+
+    closeMediaLibraryModal() {
+        if (!this.mediaLibraryModal) return;
+        this.mediaLibraryModal.classList.add('hidden');
+        if (this.mediaGrid) this.mediaGrid.innerHTML = '';
+    }
+
+    async loadMediaLibrary() {
+        try {
+            const res = await fetch('/files');
+            if (!res.ok) return;
+            const data = await res.json();
+            this.allMediaFiles = (data.files || []).filter(f => (f.type || '').startsWith('image/'));
+            this.renderMediaLibrary(this.allMediaFiles);
+        } catch (e) {
+            console.error('Failed to load media library', e);
+        }
+    }
+
+    renderMediaLibrary(list) {
+        if (!this.mediaGrid) return;
+        this.mediaGrid.innerHTML = '';
+        list.forEach(file => {
+            const card = document.createElement('div');
+            card.style.background = 'rgba(255,255,255,.08)';
+            card.style.border = '1px solid rgba(255,255,255,.2)';
+            card.style.borderRadius = '10px';
+            card.style.overflow = 'hidden';
+            card.style.cursor = 'pointer';
+            card.innerHTML = `
+                <div style="aspect-ratio:1/1;background:#000;display:flex;align-items:center;justify-content:center;">
+                    <img src="${file.url}" alt="${this.escapeHtml(file.originalName)}" style="max-width:100%;max-height:100%;object-fit:contain;"/>
+                </div>
+                <div style="padding:8px;display:flex;flex-direction:column;gap:4px;">
+                    <div style="font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;">${this.escapeHtml(file.originalName)}</div>
+                    <div style="font-size:11px;opacity:.75;">by ${this.escapeHtml(file.uploader || 'unknown')}</div>
+                </div>
+            `;
+            card.addEventListener('click', () => {
+                // Insert filename to input and close
+                const name = file.originalName;
+                const input = this.chatInput;
+                if (input) {
+                    input.value = input.value ? `${input.value} "${name}"` : `"${name}"`;
+                    input.focus();
+                    input.setSelectionRange(input.value.length, input.value.length);
+                }
+                this.closeMediaLibraryModal();
+            });
+            this.mediaGrid.appendChild(card);
+        });
+    }
+
+    filterMediaLibrary() {
+        if (!this.allMediaFiles) return;
+        const q = (this.mediaSearchInput?.value || '').toLowerCase().trim();
+        const byUploader = this.mediaSearchByUploader?.checked !== false;
+        const byFilename = this.mediaSearchByFilename?.checked !== false;
+        if (!q) return this.renderMediaLibrary(this.allMediaFiles);
+        const filtered = this.allMediaFiles.filter(f => {
+            const name = (f.originalName || f.filename || '').toLowerCase();
+            const uploader = (f.uploader || '').toLowerCase();
+            const nameMatch = byFilename && name.includes(q);
+            const uploaderMatch = byUploader && uploader.includes(q);
+            return nameMatch || uploaderMatch;
+        });
+        this.renderMediaLibrary(filtered);
     }
 
     // Progressive 3x3 tiled image that upgrades quality per tile

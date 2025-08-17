@@ -63,7 +63,7 @@
             <!-- Chat Input Row -->
             <div class="chat-input-row">
                 <button id="attachButton" class="attach-button" title="Attach files or paste from clipboard">📎</button>
-                <button id="emojiButton" class="emoji-button" title="Insert emoji">😀</button>
+                <button id="mediaLibraryButton" class="emoji-button" title="Browse uploaded images">🖼️</button>
                 <textarea id="chatInput" rows="1" placeholder="msg thing" maxlength="5000"></textarea>
                 <div class="auto-scroll-toggle" id="autoScrollToggle" title="Toggle Auto Scroll">
                     ⬇️
@@ -173,27 +173,21 @@
     </div>
 
     <!-- Emoji Picker Modal -->
-    <div id="emojiPickerModal" class="emoji-picker-modal hidden">
+    <div id="mediaLibraryModal" class="emoji-picker-modal hidden">
         <div class="emoji-picker-backdrop"></div>
-        <div class="emoji-picker-container">
+        <div class="emoji-picker-container" style="max-width:720px">
             <div class="emoji-picker-header">
-                <h3>Pick an Emoji</h3>
-                <button class="close-button" id="closeEmojiPicker">×</button>
+                <h3>Uploaded Images</h3>
+                <button class="close-button" id="closeMediaLibrary">×</button>
             </div>
-            <div class="emoji-picker-content">
-                <div class="emoji-categories">
-                    <button class="emoji-category active" data-category="smileys">😀</button>
-                    <button class="emoji-category" data-category="gestures">👍</button>
-                    <button class="emoji-category" data-category="animals">🐶</button>
-                    <button class="emoji-category" data-category="food">🍎</button>
-                    <button class="emoji-category" data-category="activities">⚽</button>
-                    <button class="emoji-category" data-category="objects">🔥</button>
-                    <button class="emoji-category" data-category="travel">🚗</button>
-                    <button class="emoji-category" data-category="weather">☀️</button>
+            <div class="emoji-picker-content" style="gap:12px;display:flex;flex-direction:column;">
+                <div style="font-size:12px;opacity:.8;">Tip: You can send an image by typing its exact file name (e.g., <code>boo.jpg</code>).</div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input id="mediaSearchInput" type="text" placeholder="Search..." style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.08);color:#fff;">
+                    <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" id="searchByUploader" checked> Uploader Name</label>
+                    <label style="display:flex;gap:6px;align-items:center;font-size:12px;"><input type="checkbox" id="searchByFilename" checked> File Name</label>
                 </div>
-                <div class="emoji-grid" id="emojiGrid">
-                    <!-- Emojis will be populated by JavaScript -->
-                </div>
+                <div id="mediaGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;max-height:420px;overflow:auto;"></div>
             </div>
         </div>
     </div>
