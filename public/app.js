@@ -1482,10 +1482,8 @@
         // Filename mention resolution: replace content-only filename tokens with existing attachments
         if (cleanContent) {
             const foundNames = new Set();
-            // Quoted filenames: "some file name.jpg"
             const quotedMatches = [...cleanContent.matchAll(/\"([^\"\n]+\.[a-zA-Z0-9]{1,8})\"/g)];
             quotedMatches.forEach(m => foundNames.add(m[1]));
-            // Bare tokens with extension
             const bareMatches = [...cleanContent.matchAll(/(?<!\S)([^\s]+\.[a-zA-Z0-9]{1,8})(?!\S)/g)];
             bareMatches.forEach(m => foundNames.add(m[1]));
             const names = Array.from(foundNames);
@@ -1503,14 +1501,36 @@
                         }
                     }
                 });
+                // Fallback to server exists for names not found in registry
+                const unresolved = names.filter(n => !attachedNames.includes(n));
+                if (unresolved.length > 0) {
+                    // Note: sequential to avoid burst; can optimize to Promise.all if needed
+                    for (const n of unresolved) {
+                        try {
+                            const resp = await fetch(`/files/exists?name=${encodeURIComponent(n)}`);
+                            if (resp.ok) {
+                                const data = await resp.json();
+                                if (data.exists && data.file) {
+                                    const att = {
+                                        originalName: data.file.originalName,
+                                        filename: data.file.filename,
+                                        size: data.file.size,
+                                        type: data.file.type || this.inferMimeFromName(data.file.filename || data.file.originalName),
+                                        url: data.file.url
+                                    };
+                                    if (!attachments.find(a => a.url === att.url)) {
+                                        attachments.push(att);
+                                        attachedNames.push(n);
+                                    }
+                                }
+                            }
+                        } catch (_) { /* ignore */ }
+                    }
+                }
                 if (attachedNames.length > 0) {
-                    // remove quoted occurrences first
                     attachedNames.forEach(n => {
                         const quotedRe = new RegExp(`\\"${n.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}\\"`, 'g');
                         cleanContent = cleanContent.replace(quotedRe, ' ').trim();
-                    });
-                    // remove bare tokens
-                    attachedNames.forEach(n => {
                         const bareRe = new RegExp(`(^|\\s)${n.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')}(?=\\s|$)`, 'g');
                         cleanContent = cleanContent.replace(bareRe, ' ').trim();
                     });
@@ -1787,7 +1807,7 @@
             // Check if message contains line breaks for visual separator
             const hasLineBreaks = data.content.includes('\n');
             if (hasLineBreaks) {
-                contentSpan.classList.add('has-line-breaks');
+                contentDiv.classList.add('has-line-breaks');
             }
             
             // Process emojis, markdown, censor swear words, and process mentions
@@ -3086,12 +3106,11 @@
                         if (choice === 'existing') {
                             const fileID = Math.random().toString(36).substr(2, 8);
                             window.attachmentRegistry = window.attachmentRegistry || new Map();
-                            const type = dup.file.type && dup.file.type !== '' ? dup.file.type : this.inferMimeFromName(dup.file.filename || dup.file.originalName);
                             window.attachmentRegistry.set(fileID, {
                                 originalName: dup.file.originalName,
                                 filename: dup.file.filename,
                                 size: dup.file.size,
-                                type,
+                                type: dup.file.type || this.inferMimeFromName(dup.file.filename || dup.file.originalName),
                                 url: dup.file.url
                             });
                             this.pendingAttachmentIds.add(fileID);
@@ -3249,27 +3268,6 @@
         
         // Unknown/unrecognized file type
         return '?';
-    }
-
-    // Basic MIME inference from filename extension (client-side safeguard)
-    inferMimeFromName(name) {
-        if (!name) return 'application/octet-stream';
-        const lower = name.toLowerCase();
-        if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-        if (lower.endsWith('.png')) return 'image/png';
-        if (lower.endsWith('.gif')) return 'image/gif';
-        if (lower.endsWith('.webp')) return 'image/webp';
-        if (lower.endsWith('.bmp')) return 'image/bmp';
-        if (lower.endsWith('.svg')) return 'image/svg+xml';
-        if (lower.endsWith('.mp4')) return 'video/mp4';
-        if (lower.endsWith('.webm')) return 'video/webm';
-        if (lower.endsWith('.mp3')) return 'audio/mpeg';
-        if (lower.endsWith('.wav')) return 'audio/wav';
-        if (lower.endsWith('.ogg')) return 'audio/ogg';
-        if (lower.endsWith('.txt')) return 'text/plain';
-        if (lower.endsWith('.json')) return 'application/json';
-        if (lower.endsWith('.pdf')) return 'application/pdf';
-        return 'application/octet-stream';
     }
 
     formatFileSize(bytes) {
@@ -6354,6 +6352,47 @@
                 type: 'tabbedStatus',
                 isTabbed: isTabbed
             }));
+        }
+    }
+
+    rgbToHex(r, g, b) {
+        const h = (n) => n.toString(16).padStart(2, '0');
+        return `#${h(r)}${h(g)}${h(b)}`;
+    }
+
+    relativeLuminance(hex) {
+        // Convert hex to RGB
+        const r = parseInt(hex.slice(1, 3), 16) / 255;
+        const g = parseInt(hex.slice(3, 5), 16) / 255;
+        const b = parseInt(hex.slice(5, 7), 16) / 255;
+
+        // Calculate relative luminance
+        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+        return luminance;
+    }
+
+    // Infer a basic mime type from a filename (client-side fallback)
+    inferMimeFromName(name) {
+        if (!name) return '';
+        const ext = name.toLowerCase().split('.').pop();
+        switch (ext) {
+            case 'jpg':
+            case 'jpeg': return 'image/jpeg';
+            case 'png': return 'image/png';
+            case 'gif': return 'image/gif';
+            case 'webp': return 'image/webp';
+            case 'mp4': return 'video/mp4';
+            case 'webm': return 'video/webm';
+            case 'mov': return 'video/quicktime';
+            case 'mp3': return 'audio/mpeg';
+            case 'wav': return 'audio/wav';
+            case 'ogg': return 'audio/ogg';
+            case 'pdf': return 'application/pdf';
+            case 'txt': return 'text/plain';
+            case 'json': return 'application/json';
+            case 'md': return 'text/markdown';
+            case 'zip': return 'application/zip';
+            default: return '';
         }
     }
 }

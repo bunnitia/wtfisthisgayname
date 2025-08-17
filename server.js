@@ -37,6 +37,45 @@ function getAvailableFilename(original) {
     return candidate;
 }
 
+function guessMime(input) {
+    const ext = (input.startsWith('.') ? input : path.extname(input)).toLowerCase();
+    switch (ext) {
+        case '.jpg':
+        case '.jpeg':
+            return 'image/jpeg';
+        case '.png':
+            return 'image/png';
+        case '.gif':
+            return 'image/gif';
+        case '.webp':
+            return 'image/webp';
+        case '.mp4':
+            return 'video/mp4';
+        case '.webm':
+            return 'video/webm';
+        case '.mov':
+            return 'video/quicktime';
+        case '.mp3':
+            return 'audio/mpeg';
+        case '.wav':
+            return 'audio/wav';
+        case '.ogg':
+            return 'audio/ogg';
+        case '.pdf':
+            return 'application/pdf';
+        case '.txt':
+            return 'text/plain';
+        case '.json':
+            return 'application/json';
+        case '.md':
+            return 'text/markdown';
+        case '.zip':
+            return 'application/zip';
+        default:
+            return 'application/octet-stream';
+    }
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, uploadsDir);
@@ -124,13 +163,14 @@ app.get('/files/exists', (req, res) => {
         const filePath = path.join(uploadsDir, sanitized);
         if (fs.existsSync(filePath)) {
             const stat = fs.statSync(filePath);
+            const type = guessMime(path.extname(sanitized));
             return res.json({
                 exists: true,
                 file: {
                     originalName: sanitized,
                     filename: sanitized,
                     size: stat.size,
-                    type: path.extname(sanitized).toLowerCase(),
+                    type,
                     url: `/uploads/${encodeURIComponent(sanitized)}`
                 }
             });
@@ -150,11 +190,12 @@ app.get('/files', (req, res) => {
             try {
                 const stat = fs.statSync(path.join(uploadsDir, name));
                 if (!stat.isFile()) return null;
+                const type = guessMime(path.extname(name));
                 return {
                     originalName: name,
                     filename: name,
                     size: stat.size,
-                    type: path.extname(name).toLowerCase(),
+                    type,
                     url: `/uploads/${encodeURIComponent(name)}`
                 };
             } catch {
