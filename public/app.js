@@ -3086,11 +3086,12 @@
                         if (choice === 'existing') {
                             const fileID = Math.random().toString(36).substr(2, 8);
                             window.attachmentRegistry = window.attachmentRegistry || new Map();
+                            const type = dup.file.type && dup.file.type !== '' ? dup.file.type : this.inferMimeFromName(dup.file.filename || dup.file.originalName);
                             window.attachmentRegistry.set(fileID, {
                                 originalName: dup.file.originalName,
                                 filename: dup.file.filename,
                                 size: dup.file.size,
-                                type: dup.file.type,
+                                type,
                                 url: dup.file.url
                             });
                             this.pendingAttachmentIds.add(fileID);
@@ -3248,6 +3249,27 @@
         
         // Unknown/unrecognized file type
         return '?';
+    }
+
+    // Basic MIME inference from filename extension (client-side safeguard)
+    inferMimeFromName(name) {
+        if (!name) return 'application/octet-stream';
+        const lower = name.toLowerCase();
+        if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+        if (lower.endsWith('.png')) return 'image/png';
+        if (lower.endsWith('.gif')) return 'image/gif';
+        if (lower.endsWith('.webp')) return 'image/webp';
+        if (lower.endsWith('.bmp')) return 'image/bmp';
+        if (lower.endsWith('.svg')) return 'image/svg+xml';
+        if (lower.endsWith('.mp4')) return 'video/mp4';
+        if (lower.endsWith('.webm')) return 'video/webm';
+        if (lower.endsWith('.mp3')) return 'audio/mpeg';
+        if (lower.endsWith('.wav')) return 'audio/wav';
+        if (lower.endsWith('.ogg')) return 'audio/ogg';
+        if (lower.endsWith('.txt')) return 'text/plain';
+        if (lower.endsWith('.json')) return 'application/json';
+        if (lower.endsWith('.pdf')) return 'application/pdf';
+        return 'application/octet-stream';
     }
 
     formatFileSize(bytes) {
