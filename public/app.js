@@ -682,7 +682,7 @@
         this.historyMoreAvailable = false;
         this.historyOldestTimestamp = null;
         this.isLoadingOlder = false;
-        this.historyLoaderEl = null;
+        // historyLoaderEl removed - using fixed cap of 312 messages
         this.onlineCount = document.getElementById('onlineCount');
         
         // Connection status indicator
@@ -1001,10 +1001,9 @@
             this.scrollToBottom(true);
         });
 
-        // Track scroll position to auto-enable/disable auto-scroll and lazy-load older history
+        // Track scroll position to auto-enable/disable auto-scroll
         this.chatHistory.addEventListener('scroll', () => {
             this.handleChatScroll();
-            this.maybeLoadOlderHistory();
         });
         
         this.closeSettings.addEventListener('click', () => {
@@ -1337,9 +1336,7 @@
             case 'history':
                 this.loadChatHistory(data.messages, data.moreAvailable);
                 break;
-            case 'historyPage':
-                this.prependOlderHistory(data.messages, data.moreAvailable);
-                break;
+            // historyPage case removed - using fixed cap of 312 messages
             case 'usernameError':
                 this.handleUsernameError(data);
                 break;
@@ -2030,7 +2027,7 @@
         } else {
             this.historyOldestTimestamp = null;
         }
-        this.historyMoreAvailable = !!moreAvailable;
+        this.historyMoreAvailable = false; // Fixed cap of 312 messages, no more available
         
         // Ensure we're scrolled to bottom initially
         this.scrollToBottom(true);
@@ -2039,109 +2036,18 @@
         this.isWindowFocused = wasTrackingUnread;
     }
 
-    maybeCreateHistoryLoader() {
-        if (this.historyLoaderEl) return;
-        const loader = document.createElement('div');
-        loader.className = 'history-loader hidden';
-        loader.textContent = 'Loading previous messages...';
-        this.historyLoaderEl = loader;
-        this.chatHistory.prepend(loader);
-    }
-
-    showHistoryLoader(show) {
-        this.maybeCreateHistoryLoader();
-        if (!this.historyLoaderEl) return;
-        if (show) this.historyLoaderEl.classList.remove('hidden');
-        else this.historyLoaderEl.classList.add('hidden');
-    }
+    // History loader functions removed - using fixed cap of 312 messages
 
     async maybeLoadOlderHistory() {
-        if (!this.historyMoreAvailable || this.isLoadingOlder) return;
-        // Load when near top
-        const threshold = 60; // px
-        if (this.chatHistory.scrollTop <= threshold) {
-            await this.requestOlderHistory();
-        }
+        // Disabled - using fixed cap of 312 messages
+        return;
     }
 
-    async requestOlderHistory() {
-        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-        if (!this.historyMoreAvailable) return;
-        this.isLoadingOlder = true;
-        const previousHeight = this.chatHistory.scrollHeight;
-        this.showHistoryLoader(true);
-        try {
-            const before = typeof this.historyOldestTimestamp === 'number' ? this.historyOldestTimestamp : Number.POSITIVE_INFINITY;
-            this.socket.send(JSON.stringify({
-                type: 'getHistory',
-                before,
-                limit: 50
-            }));
-            // Response handled in prependOlderHistory
-        } catch (e) {
-            console.error('Failed to request older history', e);
-            this.isLoadingOlder = false;
-            this.showHistoryLoader(false);
-        }
-    }
+    // requestOlderHistory function removed - using fixed cap of 312 messages
 
-    prependOlderHistory(messages, moreAvailable = false) {
-        // Keep current scroll position relative to content after prepending
-        const previousScrollHeight = this.chatHistory.scrollHeight;
-        const previousScrollTop = this.chatHistory.scrollTop;
-        
-        // Temporarily disable auto-scroll while prepending
-        const prevAuto = this.autoScrollEnabled;
-        this.disableAutoScroll();
-        
-        // Insert placeholder to maintain date separators correctly
-        const firstExisting = this.chatHistory.firstChild;
-        
-        // Render from oldest to newest
-        (messages || []).forEach(msg => {
-            // When prepending, we want to insert before the first existing child but after a loader if present
-            const elem = this.createMessageElementForPrepend(msg);
-            if (this.historyLoaderEl && this.chatHistory.firstChild === this.historyLoaderEl) {
-                this.chatHistory.insertBefore(elem, this.historyLoaderEl.nextSibling);
-            } else {
-                this.chatHistory.insertBefore(elem, this.chatHistory.firstChild);
-            }
-        });
-        
-        // Update oldest timestamp
-        if (Array.isArray(messages) && messages.length > 0) {
-            this.historyOldestTimestamp = messages[0].timestamp || this.historyOldestTimestamp;
-        }
-        this.historyMoreAvailable = !!moreAvailable;
-        
-        // Restore scroll so content does not jump
-        const newScrollHeight = this.chatHistory.scrollHeight;
-        const delta = newScrollHeight - previousScrollHeight;
-        this.chatHistory.scrollTop = previousScrollTop + delta;
-        
-        // Hide loader and restore auto-scroll state (but only re-enable if it was on)
-        this.showHistoryLoader(false);
-        if (prevAuto) this.enableAutoScroll();
-        this.isLoadingOlder = false;
-    }
+    // prependOlderHistory function removed - using fixed cap of 312 messages
 
-    createMessageElementForPrepend(message) {
-        // Build element using existing message rendering logic but without auto-scrolling side effects
-        const messageElement = document.createElement('div');
-        messageElement.className = 'chat-message';
-        messageElement.setAttribute('data-message-id', message.id);
-        messageElement.messageData = message;
-        this.messageElements.set(message.id, messageElement);
-        
-        if (message.type === 'dmNotification') {
-            this.createDMNotificationMessage(messageElement, message);
-        } else {
-            this.createRegularMessage(messageElement, message);
-        }
-        // Date separators for prepend: if the first element after loader belongs to a later day, we might need to ensure separators exist.
-        // Keep it simple for now; separators will be corrected on future appends.
-        return messageElement;
-    }
+    // createMessageElementForPrepend function removed - using fixed cap of 312 messages
 
     // === Date separator helpers ===
     getLocalDateKeyFromTimestamp(timestamp) {

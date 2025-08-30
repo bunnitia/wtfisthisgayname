@@ -352,8 +352,8 @@ const bannedFingerprints = new Set(); // Store banned device fingerprints
 const fingerprintToIPs = new Map(); // Track which IPs a fingerprint has used
 const ipToFingerprint = new Map(); // Track which fingerprint an IP is using
 const MAX_MESSAGES = 128;
-const INITIAL_HISTORY_COUNT = 30; // messages to send on join
-const HISTORY_PAGE_SIZE = 50; // messages per page when requesting older history
+const INITIAL_HISTORY_COUNT = 312; // fixed cap of 312 messages
+const HISTORY_PAGE_SIZE = 50; // messages per page when requesting older history (not used with fixed cap)
 const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // Keep last 7 days of global chat
 
@@ -522,7 +522,7 @@ function processJoin(clientId, joinMessage) {
         client.ws.send(JSON.stringify({
             type: 'history',
             messages: initialSlice,
-            moreAvailable: cleanHistory.length > initialSlice.length
+            moreAvailable: false // Fixed cap, no more history available
         }));
         console.log(`✅ History sent to ${joinMessage.username}`);
     } catch (error) {
