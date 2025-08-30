@@ -275,6 +275,14 @@ body {
     scroll-behavior: smooth;
 }
 
+.history-loader {
+    text-align: center;
+    color: #aaa;
+    font-size: 12px;
+    padding: 8px 0;
+}
+.history-loader.hidden { display: none; }
+
 .chat-message {
     margin-bottom: 12px;
     padding-left: 5px;
@@ -413,6 +421,45 @@ body {
     background: rgba(102, 126, 234, 0.3);
     border-color: rgba(102, 126, 234, 0.5);
     transform: scale(1.05);
+}
+
+/* Quick delete button styling */
+.quick-delete-btn {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    color: #ef4444;
+    padding: 4px 8px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+    z-index: 11;
+    position: relative;
+}
+
+.quick-delete-btn:hover {
+    background: rgba(239, 68, 68, 0.4);
+    border-color: rgba(239, 68, 68, 0.6);
+    transform: scale(1.05);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+/* Quick delete controls styling */
+.message-hover-controls.quick-delete {
+    animation: fadeInQuickDelete 0.2s ease forwards;
+}
+
+@keyframes fadeInQuickDelete {
+    from { 
+        opacity: 0; 
+        transform: translateY(-50%) translateX(10px) scale(0.9); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(-50%) translateX(0) scale(1); 
+    }
 }
 
 /* Prevent hover effects when dropdown is open */
@@ -776,6 +823,31 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
     margin-bottom: 6px;
     font-size: 12px;
     color: #fff;
+}
+
+.inline-attachment-tag .file-progress {
+    width: 64px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.inline-attachment-tag .file-progress .bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #4da6ff, #66b3ff);
+    transition: width 0.15s linear;
+}
+.inline-attachment-tag .remove-btn {
+    background: transparent;
+    border: none;
+    color: #fff;
+    padding: 0 4px;
+    cursor: pointer;
+    opacity: 0.8;
+}
+.inline-attachment-tag .remove-btn:hover {
+    opacity: 1;
 }
 
 .attachment-preview.hidden {
@@ -1938,6 +2010,48 @@ input:checked + .toggle-slider:before {
     opacity: 0.6;
 }
 
+/* New gibberish deletion styling */
+.message-gibberish-deleted {
+    filter: blur(8px);
+    transition: filter 0.5s ease-in-out;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.message-gibberish-deleted:hover {
+    filter: blur(12px);
+}
+
+.message-gibberish-deleted::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Animation for when gibberish deletion is applied */
+@keyframes gibberishBlur {
+    0% {
+        filter: blur(0px);
+    }
+    100% {
+        filter: blur(8px);
+    }
+}
+
+.message-gibberish-deleted.animate {
+    animation: gibberishBlur 0.5s ease-in-out forwards;
+}
+
 .file-deleted-placeholder {
     margin-top: 8px;
 }
@@ -2894,34 +3008,7 @@ body:has(.message-menu-dropdown.show) .chat-message:has(.message-menu-dropdown.s
 }
 
 /* Emoji Picker Styles */
-.emoji-button {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 12px;
-    color: white;
-    font-size: 18px;
-    padding: 10px 12px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
-    margin-right: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 44px;
-    height: 44px;
-}
-
-.emoji-button:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
-    transform: scale(1.05);
-    box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
-}
-
-.emoji-button:active {
-    transform: scale(0.95);
-}
+/* Emoji button removed */
 
 .emoji-picker-modal {
     position: fixed;

@@ -32,7 +32,8 @@
         this.currentSettings = {
             appearance: {
                 gradientColor1: '#525284',
-                gradientColor2: '#AAAAEE'
+                gradientColor2: '#AAAAEE',
+                autoAdjustColors: true
             },
             safety: {
                 censorSwears: false,
@@ -677,6 +678,11 @@
         this.chatHistory = document.getElementById('chatHistory');
         this.chatInput = document.getElementById('chatInput');
         this.userList = document.getElementById('userContainer');
+        // History pagination state
+        this.historyMoreAvailable = false;
+        this.historyOldestTimestamp = null;
+        this.isLoadingOlder = false;
+        this.historyLoaderEl = null;
         this.onlineCount = document.getElementById('onlineCount');
         
         // Connection status indicator
@@ -704,6 +710,7 @@
         this.updateAccountButton = document.getElementById('updateAccountButton');
         this.gradientColor1 = document.getElementById('gradientColor1');
         this.gradientColor2 = document.getElementById('gradientColor2');
+        this.autoAdjustColors = document.getElementById('autoAdjustColors');
         this.resetAppearance = document.getElementById('resetAppearance');
         this.censorSwears = document.getElementById('censorSwears');
         this.spoilerImages = document.getElementById('spoilerImages');
@@ -711,13 +718,7 @@
         // Notification settings
         this.pingSound = document.getElementById('pingSound');
         
-        // Emoji picker elements
-        this.emojiButton = document.getElementById('emojiButton');
-        this.emojiPickerModal = document.getElementById('emojiPickerModal');
-        this.closeEmojiPicker = document.getElementById('closeEmojiPicker');
-        this.emojiPickerBackdrop = document.querySelector('.emoji-picker-backdrop');
-        this.emojiGrid = document.getElementById('emojiGrid');
-        this.emojiCategories = document.querySelectorAll('.emoji-category');
+        // Emoji picker elements (removed)
         
         // Mention dropdown elements
         this.mentionDropdown = document.getElementById('mentionDropdown');
@@ -1000,9 +1001,10 @@
             this.scrollToBottom(true);
         });
 
-        // Track scroll position to auto-enable/disable auto-scroll
+        // Track scroll position to auto-enable/disable auto-scroll and lazy-load older history
         this.chatHistory.addEventListener('scroll', () => {
             this.handleChatScroll();
+            this.maybeLoadOlderHistory();
         });
         
         this.closeSettings.addEventListener('click', () => {
@@ -1048,6 +1050,11 @@
             this.updateNotificationSettings();
         });
         
+        // Auto-adjust colors setting
+        this.autoAdjustColors.addEventListener('change', () => {
+            this.toggleAutoAdjustColors();
+        });
+        
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
@@ -1070,6 +1077,19 @@
             }
         });
         
+        // Global Shift key detection for quick delete
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                this.handleShiftKeyDown();
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                this.handleShiftKeyUp();
+            }
+        });
+        
         // Mouse tracking for live cursors
         document.addEventListener('mousemove', (e) => {
             this.handleMouseMove(e);
@@ -1080,25 +1100,7 @@
             this.handleWindowResize();
         });
         
-        // Emoji picker events
-        this.emojiButton.addEventListener('click', () => {
-            this.openEmojiPicker();
-        });
-
-        this.closeEmojiPicker.addEventListener('click', () => {
-            this.closeEmojiPickerModal();
-        });
-
-        this.emojiPickerBackdrop.addEventListener('click', () => {
-            this.closeEmojiPickerModal();
-        });
-
-        // Emoji category navigation
-        this.emojiCategories.forEach(category => {
-            category.addEventListener('click', () => {
-                this.switchEmojiCategory(category.dataset.category);
-            });
-        });
+        // Emoji picker events (removed)
         
         // Mention dropdown events
         this.mentionList.addEventListener('click', (e) => {
@@ -1333,7 +1335,10 @@
                 this.sendDeviceFingerprint();
                 break;
             case 'history':
-                this.loadChatHistory(data.messages);
+                this.loadChatHistory(data.messages, data.moreAvailable);
+                break;
+            case 'historyPage':
+                this.prependOlderHistory(data.messages, data.moreAvailable);
                 break;
             case 'usernameError':
                 this.handleUsernameError(data);
@@ -1854,9 +1859,24 @@
         contentSpan.className = 'message-content';
         
         if (data.deleted) {
-            // Ensure deleted styling applies on initial render too
-            messageElement.classList.add('message-deleted');
-            contentSpan.innerHTML = '<em class="message-deleted">message deleted by user</em>';
+            // Handle gibberish deletion - show the gibberish content with blur
+            messageElement.classList.add('message-gibberish-deleted');
+            
+            // Process the gibberish content (it's already gibberish from server)
+            const lineBreakContent = data.content.replace(/\n/g, '<br>');
+            const processedContent = this.processEmojis(lineBreakContent);
+            const markdownContent = this.processMarkdown(processedContent);
+            const censoredContent = this.censorSwearWords(markdownContent);
+            const mentionedContent = this.processMentions(censoredContent);
+            
+            contentSpan.innerHTML = mentionedContent;
+            contentSpan.style.color = 'rgba(128, 128, 128, 0.8)';
+            contentSpan.style.fontStyle = 'italic';
+            
+            // Add animation class for smooth blur transition
+            setTimeout(() => {
+                messageElement.classList.add('animate');
+            }, 10);
         } else {
             // Check if message contains line breaks for visual separator
             const hasLineBreaks = data.content.includes('\n');
@@ -1874,6 +1894,16 @@
             // Use innerHTML to render emojis, markdown, mentions, and line breaks properly
             contentSpan.innerHTML = mentionedContent;
             contentSpan.style.color = data.color;
+            
+            // Store original color for auto-adjust feature
+            contentSpan.dataset.originalColor = data.color;
+            
+            // Apply auto-adjust colors if enabled
+            if (this.currentSettings.appearance.autoAdjustColors) {
+                const backgroundColor = this.getBackgroundColorAtPosition(contentSpan);
+                const readableColor = this.getReadableTextColor(backgroundColor, data.color);
+                contentSpan.style.color = readableColor;
+            }
             
             if (data.edited) {
                 const editedIndicator = document.createElement('span');
@@ -1983,7 +2013,7 @@
         messageDiv.addEventListener('mouseleave', hideHover);
     }
     
-    loadChatHistory(messages) {
+    loadChatHistory(messages, moreAvailable = false) {
         this.chatHistory.innerHTML = '';
         this.lastRenderedDateKey = null;
         // Don't track unread messages for initial history load
@@ -1994,8 +2024,123 @@
             this.displayMessage(message);
         });
         
+        // Track oldest timestamp among loaded messages
+        if (Array.isArray(messages) && messages.length > 0) {
+            this.historyOldestTimestamp = messages[0].timestamp || this.historyOldestTimestamp;
+        } else {
+            this.historyOldestTimestamp = null;
+        }
+        this.historyMoreAvailable = !!moreAvailable;
+        
+        // Ensure we're scrolled to bottom initially
+        this.scrollToBottom(true);
+        
         // Restore original focus state
         this.isWindowFocused = wasTrackingUnread;
+    }
+
+    maybeCreateHistoryLoader() {
+        if (this.historyLoaderEl) return;
+        const loader = document.createElement('div');
+        loader.className = 'history-loader hidden';
+        loader.textContent = 'Loading previous messages...';
+        this.historyLoaderEl = loader;
+        this.chatHistory.prepend(loader);
+    }
+
+    showHistoryLoader(show) {
+        this.maybeCreateHistoryLoader();
+        if (!this.historyLoaderEl) return;
+        if (show) this.historyLoaderEl.classList.remove('hidden');
+        else this.historyLoaderEl.classList.add('hidden');
+    }
+
+    async maybeLoadOlderHistory() {
+        if (!this.historyMoreAvailable || this.isLoadingOlder) return;
+        // Load when near top
+        const threshold = 60; // px
+        if (this.chatHistory.scrollTop <= threshold) {
+            await this.requestOlderHistory();
+        }
+    }
+
+    async requestOlderHistory() {
+        if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+        if (!this.historyMoreAvailable) return;
+        this.isLoadingOlder = true;
+        const previousHeight = this.chatHistory.scrollHeight;
+        this.showHistoryLoader(true);
+        try {
+            const before = typeof this.historyOldestTimestamp === 'number' ? this.historyOldestTimestamp : Number.POSITIVE_INFINITY;
+            this.socket.send(JSON.stringify({
+                type: 'getHistory',
+                before,
+                limit: 50
+            }));
+            // Response handled in prependOlderHistory
+        } catch (e) {
+            console.error('Failed to request older history', e);
+            this.isLoadingOlder = false;
+            this.showHistoryLoader(false);
+        }
+    }
+
+    prependOlderHistory(messages, moreAvailable = false) {
+        // Keep current scroll position relative to content after prepending
+        const previousScrollHeight = this.chatHistory.scrollHeight;
+        const previousScrollTop = this.chatHistory.scrollTop;
+        
+        // Temporarily disable auto-scroll while prepending
+        const prevAuto = this.autoScrollEnabled;
+        this.disableAutoScroll();
+        
+        // Insert placeholder to maintain date separators correctly
+        const firstExisting = this.chatHistory.firstChild;
+        
+        // Render from oldest to newest
+        (messages || []).forEach(msg => {
+            // When prepending, we want to insert before the first existing child but after a loader if present
+            const elem = this.createMessageElementForPrepend(msg);
+            if (this.historyLoaderEl && this.chatHistory.firstChild === this.historyLoaderEl) {
+                this.chatHistory.insertBefore(elem, this.historyLoaderEl.nextSibling);
+            } else {
+                this.chatHistory.insertBefore(elem, this.chatHistory.firstChild);
+            }
+        });
+        
+        // Update oldest timestamp
+        if (Array.isArray(messages) && messages.length > 0) {
+            this.historyOldestTimestamp = messages[0].timestamp || this.historyOldestTimestamp;
+        }
+        this.historyMoreAvailable = !!moreAvailable;
+        
+        // Restore scroll so content does not jump
+        const newScrollHeight = this.chatHistory.scrollHeight;
+        const delta = newScrollHeight - previousScrollHeight;
+        this.chatHistory.scrollTop = previousScrollTop + delta;
+        
+        // Hide loader and restore auto-scroll state (but only re-enable if it was on)
+        this.showHistoryLoader(false);
+        if (prevAuto) this.enableAutoScroll();
+        this.isLoadingOlder = false;
+    }
+
+    createMessageElementForPrepend(message) {
+        // Build element using existing message rendering logic but without auto-scrolling side effects
+        const messageElement = document.createElement('div');
+        messageElement.className = 'chat-message';
+        messageElement.setAttribute('data-message-id', message.id);
+        messageElement.messageData = message;
+        this.messageElements.set(message.id, messageElement);
+        
+        if (message.type === 'dmNotification') {
+            this.createDMNotificationMessage(messageElement, message);
+        } else {
+            this.createRegularMessage(messageElement, message);
+        }
+        // Date separators for prepend: if the first element after loader belongs to a later day, we might need to ensure separators exist.
+        // Keep it simple for now; separators will be corrected on future appends.
+        return messageElement;
     }
 
     // === Date separator helpers ===
@@ -2336,6 +2481,11 @@
                 console.error('Error loading notification settings:', error);
             }
         }
+        
+        // Initialize auto-adjust colors if enabled
+        if (this.currentSettings.appearance.autoAdjustColors) {
+            this.initializeAutoAdjustColors();
+        }
     }
     
     openSettings() {
@@ -2345,6 +2495,7 @@
         this.settingsWebsite.value = this.userWebsite; // Add website field
         this.gradientColor1.value = this.currentSettings.appearance.gradientColor1;
         this.gradientColor2.value = this.currentSettings.appearance.gradientColor2;
+        this.autoAdjustColors.checked = this.currentSettings.appearance.autoAdjustColors;
         this.censorSwears.checked = this.currentSettings.safety.censorSwears;
         this.spoilerImages.checked = this.currentSettings.safety.spoilerImages;
         this.pingSound.checked = this.currentSettings.notifications.pingSound;
@@ -2428,10 +2579,15 @@
         
         this.applyAppearanceSettings();
         this.saveAppearanceSettings();
+        
+        // Re-adjust message colors if auto-adjust is enabled
+        if (this.currentSettings.appearance.autoAdjustColors) {
+            this.adjustMessageColors();
+        }
     }
     
     applyAppearanceSettings() {
-        const { gradientColor1, gradientColor2 } = this.currentSettings.appearance;
+        const { gradientColor1, gradientColor2, autoAdjustColors } = this.currentSettings.appearance;
         
         // Update CSS custom properties for gradient
         document.body.style.background = `linear-gradient(135deg, ${gradientColor1} 0%, ${gradientColor2} 100%)`;
@@ -2439,6 +2595,21 @@
         // Update form values
         this.gradientColor1.value = gradientColor1;
         this.gradientColor2.value = gradientColor2;
+        
+        // Handle auto-adjust colors
+        if (this.autoAdjustColors) {
+            this.autoAdjustColors.checked = autoAdjustColors;
+            
+            if (autoAdjustColors) {
+                this.initializeAutoAdjustColors();
+            } else {
+                // Reset message colors to original
+                const messages = document.querySelectorAll('.chat-message .message-content');
+                messages.forEach(messageElement => {
+                    messageElement.style.color = '';
+                });
+            }
+        }
     }
     
     saveAppearanceSettings() {
@@ -2448,11 +2619,18 @@
     resetAppearanceSettings() {
         this.currentSettings.appearance = {
             gradientColor1: '#1a1a2e',
-            gradientColor2: '#0f3460'
+            gradientColor2: '#0f3460',
+            autoAdjustColors: true
         };
         
         this.applyAppearanceSettings();
         this.saveAppearanceSettings();
+        
+        // Update the checkbox
+        this.autoAdjustColors.checked = true;
+        
+        // Re-initialize auto-adjust colors
+        this.initializeAutoAdjustColors();
     }
     
     updateSafetySettings() {
@@ -2750,6 +2928,7 @@
     addMessageHoverEffects(messageDiv, data) {
         let hoverElements = null;
         let hoverTimeout = null;
+        let isHovering = false;
         
         // Store the message data directly on the element for easy access
         messageDiv.messageData = data;
@@ -2757,8 +2936,8 @@
         const showHover = () => {
             if (hoverElements) return; // Already showing
             
-            // Don't show hover effects for deleted messages
-            if (messageDiv.classList.contains('message-deleted')) {
+            // Don't show hover effects for deleted messages (both old and new gibberish system)
+            if (messageDiv.classList.contains('message-deleted') || messageDiv.classList.contains('message-gibberish-deleted')) {
                 return;
             }
             
@@ -2770,11 +2949,11 @@
             
             if (isOwnMessage) {
                 // Show three-dot menu for own messages
-            hoverElements.innerHTML = `
+                hoverElements.innerHTML = `
                     <button class="menu-btn" title="Message options">⋮</button>
-                <span class="message-timestamp">${timestamp}</span>
-            `;
-            
+                    <span class="message-timestamp">${timestamp}</span>
+                `;
+                
                 const menuBtn = hoverElements.querySelector('.menu-btn');
                 
                 menuBtn.addEventListener('click', (e) => {
@@ -2790,20 +2969,55 @@
                     <span class="message-timestamp">${timestamp}</span>
                 `;
                 
-            const replyBtn = hoverElements.querySelector('.reply-btn');
-            
-            replyBtn.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.startReply(data);
-            });
-            
-            replyBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                this.startReply(data);
-            });
+                const replyBtn = hoverElements.querySelector('.reply-btn');
+                
+                replyBtn.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.startReply(data);
+                });
+                
+                replyBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.startReply(data);
+                });
             }
+            
+            messageDiv.appendChild(hoverElements);
+        };
+        
+        const showQuickDelete = () => {
+            if (hoverElements) {
+                hoverElements.remove();
+                hoverElements = null;
+            }
+            
+            // Don't show quick delete for deleted messages
+            if (messageDiv.classList.contains('message-deleted') || messageDiv.classList.contains('message-gibberish-deleted')) {
+                return;
+            }
+            
+            const isOwnMessage = data.username === this.username;
+            if (!isOwnMessage) return; // Only show for own messages
+            
+            hoverElements = document.createElement('div');
+            hoverElements.className = 'message-hover-controls quick-delete';
+            
+            hoverElements.innerHTML = `
+                <button class="quick-delete-btn" title="Quick delete (Shift + hover)">🗑️</button>
+                <span class="message-timestamp">${new Date(data.timestamp).toLocaleTimeString()}</span>
+            `;
+            
+            const deleteBtn = hoverElements.querySelector('.quick-delete-btn');
+            
+                    deleteBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Quick delete without confirmation
+            this.quickDeleteMessage(data, messageDiv);
+        });
             
             messageDiv.appendChild(hoverElements);
         };
@@ -2820,8 +3034,20 @@
             }, 100); // Small delay to prevent flickering
         };
         
-        messageDiv.addEventListener('mouseenter', showHover);
-        messageDiv.addEventListener('mouseleave', hideHover);
+        messageDiv.addEventListener('mouseenter', (e) => {
+            isHovering = true;
+            // Check if Shift is held
+            if (e.shiftKey) {
+                showQuickDelete();
+            } else {
+                showHover();
+            }
+        });
+        
+        messageDiv.addEventListener('mouseleave', () => {
+            isHovering = false;
+            hideHover();
+        });
         
         // Keep hover when mouse is over the controls
         messageDiv.addEventListener('mouseover', (e) => {
@@ -2834,8 +3060,8 @@
     }
 
     showMessageModal(data, messageDiv) {
-        // Don't show modal for deleted messages
-        if (messageDiv.classList.contains('message-deleted')) {
+        // Don't show modal for deleted messages (both old and new gibberish system)
+        if (messageDiv.classList.contains('message-deleted') || messageDiv.classList.contains('message-gibberish-deleted')) {
             return;
         }
         
@@ -3018,8 +3244,8 @@
         console.log('🔧 Username:', data.username);
         console.log('🔧 Current user:', this.username);
         
-        // Prevent actions on deleted messages
-        if (messageDiv.classList.contains('message-deleted')) {
+        // Prevent actions on deleted messages (both old and new gibberish system)
+        if (messageDiv.classList.contains('message-deleted') || messageDiv.classList.contains('message-gibberish-deleted')) {
             console.log('🔧 Attempted action on deleted message, ignoring');
             return;
         }
@@ -3146,6 +3372,26 @@
         }
     }
 
+    quickDeleteMessage(data, messageDiv) {
+        console.log('🔧 quickDeleteMessage called:', { data, messageDiv });
+        console.log('🔧 Message ID for quick delete:', data.id);
+        
+        // Quick delete without confirmation
+        console.log('🔧 Quick deleting message');
+        console.log('🔧 Socket state:', this.socket?.readyState);
+        
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            const message = {
+                type: 'deleteMessage',
+                messageId: data.id
+            };
+            console.log('🔧 Sending quick delete message:', message);
+            this.socket.send(JSON.stringify(message));
+        } else {
+            console.error('🔧 Socket not ready or not connected');
+        }
+    }
+
     handleMessageEdited(data) {
         console.log('🔧 handleMessageEdited called:', data);
         // Find the message element by its ID
@@ -3160,6 +3406,13 @@
                 const censoredContent = this.censorSwearWords(processedContent);
                 // Use innerHTML to render emojis properly, but escape HTML first for security
                 contentSpan.innerHTML = this.escapeHtml(censoredContent);
+                
+                // Apply auto-adjust colors if enabled
+                if (this.currentSettings.appearance.autoAdjustColors) {
+                    const backgroundColor = this.getBackgroundColorAtPosition(contentSpan);
+                    const readableColor = this.getReadableTextColor(backgroundColor, messageElement.messageData?.color);
+                    contentSpan.style.color = readableColor;
+                }
                 
                 // Add edited indicator if not already present
                 if (!messageElement.querySelector('.message-edited-indicator')) {
@@ -3212,10 +3465,25 @@
             const contentSpan = messageElement.querySelector('.message-content');
             console.log('🔧 Found content span:', contentSpan);
             if (contentSpan) {
-                contentSpan.innerHTML = '<em class="message-deleted">message deleted by user</em>';
+                // The server now sends the gibberish content directly
+                // Process the gibberish content for display
+                const lineBreakContent = data.content.replace(/\n/g, '<br>');
+                const processedContent = this.processEmojis(lineBreakContent);
+                const markdownContent = this.processMarkdown(processedContent);
+                const censoredContent = this.censorSwearWords(markdownContent);
+                const mentionedContent = this.processMentions(censoredContent);
                 
-                // Mark the entire message as deleted
-                messageElement.classList.add('message-deleted');
+                contentSpan.innerHTML = mentionedContent;
+                contentSpan.style.color = 'rgba(128, 128, 128, 0.8)';
+                contentSpan.style.fontStyle = 'italic';
+                
+                // Mark the entire message as gibberish deleted
+                messageElement.classList.add('message-gibberish-deleted');
+                
+                // Add animation class for smooth blur transition
+                setTimeout(() => {
+                    messageElement.classList.add('animate');
+                }, 10);
                 
                 // Remove attachments if present and show a placeholder to indicate removal
                 const attachmentsDiv = messageElement.querySelector('.message-attachments');
@@ -3246,11 +3514,12 @@
                     messageElement.messageData = {};
                 }
                 messageElement.messageData.deleted = true;
+                messageElement.messageData.content = data.content; // Store the gibberish content
                 
                 // Close any open modals for this message
                 this.closeMessageModal();
                 
-                console.log('🔧 Message marked as deleted');
+                console.log('🔧 Message marked as gibberish deleted');
             }
         }
     }
@@ -3271,8 +3540,41 @@
     }
 
     async uploadAndGenerateID(file) {
-        // For global chat, no blocking or visible progress UI
-        
+        // Per-file inline progress + cancel support
+        // Create a tag immediately with progress + X
+        const tempId = Math.random().toString(36).substr(2, 8);
+        const container = this.attachmentPreview;
+        if (container) container.classList.remove('hidden');
+        const tag = document.createElement('div');
+        tag.className = 'inline-attachment-tag';
+        tag.setAttribute('data-attachment-id', tempId);
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = this.truncateFilename(file.name, 24);
+        const progressWrap = document.createElement('div');
+        progressWrap.className = 'file-progress';
+        const progressBar = document.createElement('div');
+        progressBar.className = 'bar';
+        progressWrap.appendChild(progressBar);
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-btn';
+        removeBtn.title = 'Remove';
+        removeBtn.textContent = '✕';
+        tag.appendChild(nameSpan);
+        tag.appendChild(progressWrap);
+        tag.appendChild(removeBtn);
+        if (container) container.appendChild(tag);
+
+        // Allow cancel by aborting the XHR
+        const xhr = new XMLHttpRequest();
+        const onRemove = () => {
+            try { xhr.abort(); } catch {}
+            tag.remove();
+            // Clean pending set for this tempId if any
+            if (this.pendingAttachmentIds) this.pendingAttachmentIds.delete(tempId);
+            if (container && container.children.length === 0) container.classList.add('hidden');
+        };
+        removeBtn.addEventListener('click', onRemove);
+
         try {
             const formData = new FormData();
             formData.append('files', file);
@@ -3294,8 +3596,18 @@
                                 type: dup.file.type || this.inferMimeFromName(dup.file.filename || dup.file.originalName),
                                 url: dup.file.url
                             });
+                            // Convert temp tag to final tag without uploading
+                            tag.setAttribute('data-attachment-id', fileID);
+                            nameSpan.textContent = this.truncateFilename(dup.file.originalName, 24);
+                            progressWrap.remove();
+                            // Update remove button to remove the final id from pending set
+                            removeBtn.removeEventListener('click', onRemove);
+                            removeBtn.addEventListener('click', () => {
+                                this.pendingAttachmentIds.delete(fileID);
+                                tag.remove();
+                                if (container && container.children.length === 0) container.classList.add('hidden');
+                            }, { once: true });
                             this.pendingAttachmentIds.add(fileID);
-                            this.showInlineAttachmentTag(fileID, dup.file.originalName);
                             // focus input and return without uploading
                             const chatInput = document.getElementById('chatInput');
                             chatInput.focus();
@@ -3308,11 +3620,14 @@
                 console.warn('duplicate check failed', e);
             }
             
-            const xhr = new XMLHttpRequest();
-            
             const uploadedFile = await new Promise((resolve, reject) => {
-                // Intentionally no visible progress for global chat
-                
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const pct = Math.max(0, Math.min(1, e.loaded / Math.max(1, e.total)));
+                        progressBar.style.width = (pct * 100) + '%';
+                    }
+                });
+
                 xhr.addEventListener('load', () => {
                     if (xhr.status === 200) {
                         try {
@@ -3345,9 +3660,25 @@
             // store the uploaded file data with the ID
             window.attachmentRegistry.set(fileID, uploadedFile);
             
-            // add inline tag (show filename, not $id$)
+            // convert the temp tag into a final tag: reset progress, keep X
+            tag.setAttribute('data-attachment-id', fileID);
+            nameSpan.textContent = this.truncateFilename(uploadedFile.originalName || uploadedFile.filename || file.name, 24);
+            progressBar.style.width = '100%';
+            // After brief delay, hide progress bar but keep the tag
+            setTimeout(() => {
+                if (progressWrap && progressWrap.parentElement) {
+                    progressWrap.remove();
+                }
+            }, 400);
+            // Update remove button to remove the final id from pending set
+            removeBtn.removeEventListener('click', onRemove);
+            removeBtn.addEventListener('click', () => {
+                this.pendingAttachmentIds.delete(fileID);
+                tag.remove();
+                if (container && container.children.length === 0) container.classList.add('hidden');
+            }, { once: true });
+            // Add to pending attachments so it gets sent with the next message
             this.pendingAttachmentIds.add(fileID);
-            this.showInlineAttachmentTag(fileID, uploadedFile.originalName || uploadedFile.filename || file.name);
 
             // keep UX snappy: focus input, don't inject raw $id$ tokens
             const chatInput = document.getElementById('chatInput');
@@ -3355,7 +3686,8 @@
             
         } catch (error) {
             console.error('Upload failed:', error);
-            // best-effort: no UI
+            // On failure, mark bar red and leave X to remove
+            progressBar.style.background = 'linear-gradient(90deg, #ff4d4d, #ff7777)';
         }
     }
 
@@ -4757,50 +5089,9 @@
         }
     }
 
-    // Emoji picker methods
-    openEmojiPicker() {
-        this.emojiPickerModal.classList.remove('hidden');
-        this.loadEmojiCategory('smileys'); // Default to smileys
-        this.highlightActiveCategory('smileys');
-    }
+    // Emoji picker methods (removed)
 
-    closeEmojiPickerModal() {
-        this.emojiPickerModal.classList.add('hidden');
-    }
 
-    switchEmojiCategory(category) {
-        this.loadEmojiCategory(category);
-        this.highlightActiveCategory(category);
-    }
-
-    highlightActiveCategory(activeCategory) {
-        this.emojiCategories.forEach(category => {
-            if (category.dataset.category === activeCategory) {
-                category.classList.add('active');
-            } else {
-                category.classList.remove('active');
-            }
-        });
-    }
-
-    loadEmojiCategory(category) {
-        const categoryEmojis = this.getCategoryEmojis(category);
-        this.emojiGrid.innerHTML = '';
-
-        categoryEmojis.forEach(emojiCode => {
-            const emoji = this.emojiMap[emojiCode];
-            if (emoji) {
-                const emojiButton = document.createElement('button');
-                emojiButton.className = 'emoji-item';
-                emojiButton.textContent = emoji;
-                emojiButton.title = emojiCode;
-                emojiButton.addEventListener('click', () => {
-                    this.insertEmoji(emojiCode);
-                });
-                this.emojiGrid.appendChild(emojiButton);
-            }
-        });
-    }
 
     getCategoryEmojis(category) {
         const categories = {
@@ -6565,6 +6856,271 @@
             case 'zip': return 'application/zip';
             default: return '';
         }
+    }
+
+    // Auto-adjust colors functionality
+    initializeAutoAdjustColors() {
+        if (!this.currentSettings.appearance.autoAdjustColors) return;
+        
+        // Create a canvas for color sampling
+        this.colorCanvas = document.createElement('canvas');
+        this.colorCanvas.width = 1;
+        this.colorCanvas.height = 1;
+        this.colorCanvas.style.display = 'none';
+        document.body.appendChild(this.colorCanvas);
+        this.colorContext = this.colorCanvas.getContext('2d');
+        
+        // Set up scroll listener for dynamic color adjustment
+        this.chatHistory.addEventListener('scroll', () => {
+            if (this.currentSettings.appearance.autoAdjustColors) {
+                this.adjustMessageColors();
+            }
+        });
+        
+        // Initial adjustment
+        this.adjustMessageColors();
+    }
+
+    getBackgroundColorAtPosition(element) {
+        // Get the element's position relative to the viewport
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.top + rect.height / 2;
+        
+        // Get the background gradient colors
+        const color1 = this.currentSettings.appearance.gradientColor1;
+        const color2 = this.currentSettings.appearance.gradientColor2;
+        
+        // Calculate the gradient position based on Y coordinate
+        const viewportHeight = window.innerHeight;
+        const gradientProgress = Math.max(0, Math.min(1, y / viewportHeight));
+        
+        // Interpolate between the two gradient colors
+        return this.interpolateColors(color1, color2, gradientProgress);
+    }
+
+    interpolateColors(color1, color2, progress) {
+        // Convert hex colors to RGB
+        const rgb1 = this.hexToRgb(color1);
+        const rgb2 = this.hexToRgb(color2);
+        
+        // Interpolate each component
+        const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * progress);
+        const g = Math.round(rgb1.g + (rgb2.g - rgb1.g) * progress);
+        const b = Math.round(rgb1.b + (rgb2.b - rgb1.b) * progress);
+        
+        return this.rgbToHex(r, g, b);
+    }
+
+    hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : { r: 0, g: 0, b: 0 };
+    }
+
+    rgbToHsl(r, g, b) {
+        r /= 255;
+        g /= 255;
+        b /= 255;
+
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        let h, s, l = (max + min) / 2;
+
+        if (max === min) {
+            h = s = 0; // achromatic
+        } else {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+            }
+            h /= 6;
+        }
+
+        return { h: h * 360, s: s, l: l };
+    }
+
+    hslToHex(h, s, l) {
+        h /= 360;
+        const a = s * Math.min(l, 1 - l);
+        const f = n => {
+            const k = (n + h * 12) % 12;
+            const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+            return Math.round(255 * color).toString(16).padStart(2, '0');
+        };
+        return `#${f(0)}${f(8)}${f(4)}`;
+    }
+
+    getReadableTextColor(backgroundColor, originalColor = null) {
+        const luminance = this.relativeLuminance(backgroundColor);
+        
+        // If background is light, use dark text; if dark, use light text
+        if (luminance > 0.5) {
+            // Light background - use dark text
+            if (originalColor) {
+                // Try to preserve some of the original color's hue while making it dark
+                const rgb = this.hexToRgb(originalColor);
+                const hsl = this.rgbToHsl(rgb.r, rgb.g, rgb.b);
+                // Keep the hue, set low lightness for dark text
+                return this.hslToHex(hsl.h, hsl.s, 0.2);
+            }
+            return '#000000';
+        } else {
+            // Dark background - use light text
+            if (originalColor) {
+                // Try to preserve some of the original color's hue while making it light
+                const rgb = this.hexToRgb(originalColor);
+                const hsl = this.rgbToHsl(rgb.r, rgb.g, rgb.b);
+                // Keep the hue, set high lightness for light text
+                return this.hslToHex(hsl.h, hsl.s, 0.9);
+            }
+            return '#ffffff';
+        }
+    }
+
+    adjustMessageColors() {
+        if (!this.currentSettings.appearance.autoAdjustColors) return;
+        
+        const messages = document.querySelectorAll('.chat-message .message-content');
+        
+        messages.forEach(messageElement => {
+            const backgroundColor = this.getBackgroundColorAtPosition(messageElement);
+            // Get the original color from the message data or use a default
+            const originalColor = messageElement.dataset.originalColor || '#ffffff';
+            const readableColor = this.getReadableTextColor(backgroundColor, originalColor);
+            
+            // Apply the readable color
+            messageElement.style.color = readableColor;
+        });
+    }
+
+    toggleAutoAdjustColors() {
+        this.currentSettings.appearance.autoAdjustColors = this.autoAdjustColors.checked;
+        
+        if (this.currentSettings.appearance.autoAdjustColors) {
+            this.initializeAutoAdjustColors();
+        } else {
+            // Reset all message colors to their original colors
+            const messages = document.querySelectorAll('.chat-message .message-content');
+            messages.forEach(messageElement => {
+                messageElement.style.color = '';
+            });
+        }
+        
+        // Save settings
+        this.saveAppearanceSettings();
+    }
+
+    // Quick delete Shift key handlers
+    handleShiftKeyDown() {
+        // Find the currently hovered message
+        const hoveredMessage = document.querySelector('.chat-message:hover');
+        if (hoveredMessage) {
+            const hoverControls = hoveredMessage.querySelector('.message-hover-controls');
+            if (hoverControls && !hoverControls.classList.contains('quick-delete')) {
+                // Remove current hover controls and show quick delete
+                hoverControls.remove();
+                
+                // Trigger quick delete for this message
+                const messageData = hoveredMessage.messageData;
+                if (messageData && messageData.username === this.username) {
+                    this.showQuickDeleteForMessage(hoveredMessage, messageData);
+                }
+            }
+        }
+    }
+
+    handleShiftKeyUp() {
+        // Find the currently hovered message
+        const hoveredMessage = document.querySelector('.chat-message:hover');
+        if (hoveredMessage) {
+            const hoverControls = hoveredMessage.querySelector('.message-hover-controls');
+            if (hoverControls && hoverControls.classList.contains('quick-delete')) {
+                // Remove quick delete controls and show normal hover
+                hoverControls.remove();
+                
+                // Trigger normal hover for this message
+                const messageData = hoveredMessage.messageData;
+                if (messageData) {
+                    this.showNormalHoverForMessage(hoveredMessage, messageData);
+                }
+            }
+        }
+    }
+
+    showQuickDeleteForMessage(messageDiv, data) {
+        const hoverElements = document.createElement('div');
+        hoverElements.className = 'message-hover-controls quick-delete';
+        
+        hoverElements.innerHTML = `
+            <button class="quick-delete-btn" title="Quick delete (Shift + hover)">🗑️</button>
+            <span class="message-timestamp">${new Date(data.timestamp).toLocaleTimeString()}</span>
+        `;
+        
+        const deleteBtn = hoverElements.querySelector('.quick-delete-btn');
+        
+        deleteBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Quick delete without confirmation
+            this.quickDeleteMessage(data, messageDiv);
+        });
+        
+        messageDiv.appendChild(hoverElements);
+    }
+
+    showNormalHoverForMessage(messageDiv, data) {
+        const hoverElements = document.createElement('div');
+        hoverElements.className = 'message-hover-controls';
+        
+        const timestamp = new Date(data.timestamp).toLocaleTimeString();
+        const isOwnMessage = data.username === this.username;
+        
+        if (isOwnMessage) {
+            // Show three-dot menu for own messages
+            hoverElements.innerHTML = `
+                <button class="menu-btn" title="Message options">⋮</button>
+                <span class="message-timestamp">${timestamp}</span>
+            `;
+            
+            const menuBtn = hoverElements.querySelector('.menu-btn');
+            
+            menuBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                this.showMessageModal(data, messageDiv);
+            });
+        } else {
+            // Show reply button for other messages
+            hoverElements.innerHTML = `
+                <button class="reply-btn" title="Reply to this message">↺</button>
+                <span class="message-timestamp">${timestamp}</span>
+            `;
+            
+            const replyBtn = hoverElements.querySelector('.reply-btn');
+            
+            replyBtn.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.startReply(data);
+            });
+            
+            replyBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.startReply(data);
+            });
+        }
+        
+        messageDiv.appendChild(hoverElements);
     }
 }
 

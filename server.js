@@ -8,6 +8,31 @@ const fs = require('fs');
 // Import the new categorized logger
 const { logEvent, logChatMessage, logDMMessage, logMessageEdit, logMessageDelete } = require('./logger');
 
+// Function to generate gibberish text that matches the original text structure
+function generateGibberishText(originalText) {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const vowels = 'aeiou';
+    const consonants = 'bcdfghjklmnpqrstvwxyz';
+    
+    return originalText.split('').map(char => {
+        // Preserve spaces, punctuation, and numbers
+        if (char === ' ' || /[.,!?;:'"()\[\]{}@#$%^&*+=<>\/\\|`~]/.test(char) || /[0-9]/.test(char)) {
+            return char;
+        }
+        
+        // For letters, generate random letters with some vowel/consonant pattern
+        if (/[a-zA-Z]/.test(char)) {
+            // 40% chance to use a vowel, 60% chance to use a consonant
+            const isVowel = Math.random() < 0.4;
+            const letterPool = isVowel ? vowels : consonants;
+            return letterPool[Math.floor(Math.random() * letterPool.length)];
+        }
+        
+        // For any other characters, return as is
+        return char;
+    }).join('');
+}
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -327,6 +352,8 @@ const bannedFingerprints = new Set(); // Store banned device fingerprints
 const fingerprintToIPs = new Map(); // Track which IPs a fingerprint has used
 const ipToFingerprint = new Map(); // Track which fingerprint an IP is using
 const MAX_MESSAGES = 128;
+const INITIAL_HISTORY_COUNT = 30; // messages to send on join
+const HISTORY_PAGE_SIZE = 50; // messages per page when requesting older history
 const MAX_DM_MESSAGES = 512; // Separate limit for DM conversations
 const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // Keep last 7 days of global chat
 
@@ -387,6 +414,7 @@ function broadcast(message, excludeClient = null) {
     // Create a clean copy of the message without server-only fields
     const cleanMessage = { ...message };
     delete cleanMessage.senderId; // Remove server-only identifier
+    delete cleanMessage.senderFingerprint; // Never expose fingerprint
     
     const messageString = JSON.stringify(cleanMessage);
     
@@ -416,15 +444,22 @@ function getOnlineUsers() {
 }
 
 // Check if a username is already taken (case-insensitive), excluding a specific clientId
-function isUsernameTaken(desiredUsername, excludeClientId = null) {
+// If the conflicting user has the same IP, allow the join
+function isUsernameTaken(desiredUsername, excludeClientId = null, currentClientIP = null) {
     if (!desiredUsername || typeof desiredUsername !== 'string') return false;
     const desired = desiredUsername.trim().toLowerCase();
     if (!desired) return false;
+    
     for (const [id, client] of clients.entries()) {
         if (excludeClientId && id === excludeClientId) continue;
         const name = (client.username || '').trim().toLowerCase();
         if (name && name === desired) {
-            return true;
+            // If we have the current client's IP and it matches the conflicting user's IP, allow it
+            if (currentClientIP && client.ip === currentClientIP) {
+                console.log(`✅ Allowing same username for same IP: ${desiredUsername} (IP: ${currentClientIP})`);
+                return false; // Not taken (allow the join)
+            }
+            return true; // Taken by different IP
         }
     }
     return false;
@@ -436,7 +471,7 @@ function processJoin(clientId, joinMessage) {
     if (!client) return;
     
     const desiredUsername = (joinMessage.username || '').trim();
-    if (isUsernameTaken(desiredUsername, clientId)) {
+    if (isUsernameTaken(desiredUsername, clientId, client.ip)) {
         try {
             if (client.ws && client.ws.readyState === WebSocket.OPEN) {
                 client.ws.send(JSON.stringify({
@@ -454,6 +489,15 @@ function processJoin(clientId, joinMessage) {
     // Log the join event with IP (only after passing validation)
     logEvent('JOIN', desiredUsername, client.ip, `Color: ${joinMessage.color}`);
     
+    // Log if this was allowed due to same IP
+    const conflictingUser = Array.from(clients.values()).find(c => 
+        c.username && c.username.toLowerCase() === desiredUsername.toLowerCase() && c.id !== clientId
+    );
+    if (conflictingUser && conflictingUser.ip === client.ip) {
+        console.log(`🔄 Same IP username join: ${desiredUsername} (IP: ${client.ip}) - allowing both users`);
+        logEvent('SAME_IP_JOIN', desiredUsername, client.ip, `Same username allowed for same IP`);
+    }
+    
     // Update client info with join data
     client.username = desiredUsername;
     client.color = joinMessage.color;
@@ -463,7 +507,7 @@ function processJoin(clientId, joinMessage) {
     
     console.log(`👋 User ${joinMessage.username} joined. Sending ${chatHistory.length} messages from history`);
     
-    // Send chat history to new client
+    // Send chat history to new client (only last INITIAL_HISTORY_COUNT to reduce payload)
     try {
         // Filter to last 7 days and clean (remove server-only fields)
         const cutoff = Date.now() - HISTORY_RETENTION_MS;
@@ -473,10 +517,12 @@ function processJoin(clientId, joinMessage) {
             delete cleanMsg.senderId; // Remove server-only identifier
             return cleanMsg;
         });
-        
+
+        const initialSlice = cleanHistory.slice(-INITIAL_HISTORY_COUNT);
         client.ws.send(JSON.stringify({
             type: 'history',
-            messages: cleanHistory
+            messages: initialSlice,
+            moreAvailable: cleanHistory.length > initialSlice.length
         }));
         console.log(`✅ History sent to ${joinMessage.username}`);
     } catch (error) {
@@ -533,6 +579,34 @@ wss.on('connection', (ws, req) => {
             const message = JSON.parse(data);
             
             switch (message.type) {
+                case 'getHistory': {
+                    const historyClient = clients.get(clientId);
+                    if (!historyClient) break;
+                    const cutoff = Date.now() - HISTORY_RETENTION_MS;
+                    // Filter to last 7 days first
+                    const recentHistory = chatHistory.filter(msg => (msg.timestamp || 0) >= cutoff);
+                    const beforeTs = typeof message.before === 'number' ? message.before : Number.POSITIVE_INFINITY;
+                    const limit = Math.max(1, Math.min(Number(message.limit) || HISTORY_PAGE_SIZE, 200));
+                    // Select messages older than 'before'
+                    const older = recentHistory.filter(msg => (msg.timestamp || 0) < beforeTs);
+                    const page = older.slice(-limit); // take the most recent of the older ones (up to limit)
+                    const cleanPage = page.map(msg => {
+                        const cleanMsg = { ...msg };
+                        delete cleanMsg.senderId;
+                        return cleanMsg;
+                    });
+                    const moreAvailable = older.length > page.length;
+                    try {
+                        if (historyClient.ws && historyClient.ws.readyState === WebSocket.OPEN) {
+                            historyClient.ws.send(JSON.stringify({
+                                type: 'historyPage',
+                                messages: cleanPage,
+                                moreAvailable
+                            }));
+                        }
+                    } catch {}
+                    break;
+                }
                 case 'fingerprint':
                     const fingerprintClient = clients.get(clientId);
                     if (fingerprintClient && message.fingerprint) {
@@ -634,7 +708,8 @@ wss.on('connection', (ws, req) => {
                             color: messageClient.color,
                             content: message.content,
                             timestamp: Date.now(),
-                            senderId: clientId // Store clientId for secure validation (never sent to clients)
+                            senderId: clientId, // Store clientId for secure validation (never sent to clients)
+                            senderFingerprint: messageClient.fingerprint // Also bind to device so edit/delete works after refresh
                         };
                         
                         // Add attachments if present
@@ -788,8 +863,9 @@ wss.on('connection', (ws, req) => {
                         logEvent('USER_UPDATE', updateClient.username, updateClient.ip, `New username: ${message.username}, New color: ${message.color}`);
                         
                         // Enforce unique usernames (case-insensitive), excluding this client
+                        // Allow same IP users to have the same username
                         const desiredUsername = (message.username || '').trim();
-                        if (isUsernameTaken(desiredUsername, clientId)) {
+                        if (isUsernameTaken(desiredUsername, clientId, updateClient.ip)) {
                             try {
                                 if (updateClient.ws && updateClient.ws.readyState === WebSocket.OPEN) {
                                     updateClient.ws.send(JSON.stringify({
@@ -808,6 +884,15 @@ wss.on('connection', (ws, req) => {
                         updateClient.username = message.username;
                         updateClient.color = message.color;
                         updateClient.website = message.website || '';
+                        
+                        // Log if this was allowed due to same IP
+                        const conflictingUser = Array.from(clients.values()).find(c => 
+                            c.username && c.username.toLowerCase() === message.username.toLowerCase() && c.id !== clientId
+                        );
+                        if (conflictingUser && conflictingUser.ip === updateClient.ip) {
+                            console.log(`🔄 Same IP username update: ${message.username} (IP: ${updateClient.ip}) - allowing both users`);
+                            logEvent('SAME_IP_UPDATE', message.username, updateClient.ip, `Same username allowed for same IP during update`);
+                        }
                         
                         // Send confirmation of successful update back to the updater
                         try {
@@ -883,7 +968,11 @@ wss.on('connection', (ws, req) => {
                             console.log('🔧 Original message:', originalMessage);
                             console.log('🔧 Sender ID match?', originalMessage.senderId === clientId);
                             // Only allow editing own messages (use senderId for security)
-                            if (originalMessage.senderId === clientId) {
+                            if (
+                                originalMessage.senderId === clientId ||
+                                (originalMessage.senderFingerprint && originalMessage.senderFingerprint === editClient.fingerprint) ||
+                                (!originalMessage.senderFingerprint && originalMessage.username === editClient.username)
+                            ) {
                                 // Log the edit with new categorized logger
                                 logMessageEdit(editClient.username, originalMessage.content, message.newContent);
                                 
@@ -927,12 +1016,20 @@ wss.on('connection', (ws, req) => {
                             console.log('🔧 Original message:', originalMessage);
                             console.log('🔧 Sender ID match?', originalMessage.senderId === clientId);
                             // Only allow deleting own messages (use senderId for security)
-                            if (originalMessage.senderId === clientId) {
+                            if (
+                                originalMessage.senderId === clientId ||
+                                (originalMessage.senderFingerprint && originalMessage.senderFingerprint === deleteClient.fingerprint) ||
+                                (!originalMessage.senderFingerprint && originalMessage.username === deleteClient.username)
+                            ) {
                                 // Log the deletion with new categorized logger
                                 logMessageDelete(deleteClient.username, originalMessage.content);
                                 
-                                // Mark the message as deleted
-                                chatHistory[messageIndex].content = 'message deleted by user';
+                                // Generate gibberish text that matches the original structure
+                                const gibberishContent = generateGibberishText(originalMessage.content);
+                                
+                                // Mark the message as deleted with gibberish content
+                                chatHistory[messageIndex].content = gibberishContent;
+                                chatHistory[messageIndex].originalContent = originalMessage.content; // Store original for logging
                                 chatHistory[messageIndex].deleted = true;
                                 chatHistory[messageIndex].deletedAt = Date.now();
 
@@ -986,10 +1083,11 @@ wss.on('connection', (ws, req) => {
                                 
                                 console.log('🔧 Message deleted, broadcasting deletion');
                                 
-                                // Broadcast the deletion to all clients
+                                // Broadcast the deletion to all clients with gibberish content
                                 broadcast({
                                     type: 'messageDeleted',
                                     messageId: message.messageId,
+                                    content: gibberishContent, // Send the gibberish content
                                     deletedBy: deleteClient.username
                                 });
                             } else {

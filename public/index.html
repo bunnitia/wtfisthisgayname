@@ -66,7 +66,6 @@
             <!-- Chat Input Row -->
             <div class="chat-input-row">
                 <button id="attachButton" class="attach-button" title="Attach files or paste from clipboard">📎</button>
-                <button id="emojiButton" class="emoji-button" title="Insert emoji">😀</button>
                 <textarea id="chatInput" rows="1" placeholder="msg thing" maxlength="5000"></textarea>
                 <div class="settings-icon" id="settingsIcon">⚙️</div>
             </div>
@@ -125,6 +124,18 @@
                             <label for="gradientColor2">Background Gradient Color 2</label>
                             <input type="color" id="gradientColor2" value="#0f3460">
                         </div>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Auto-adjust text colors for readability</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="autoAdjustColors" checked>
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                            <div class="setting-description">
+                                Automatically adjusts message text colors to ensure they remain readable against the gradient background as you scroll.
+                            </div>
+                        </div>
                         <button id="resetAppearance" class="reset-button">Reset to Default</button>
                     </div>
                     
@@ -172,31 +183,7 @@
         </div>
     </div>
 
-    <!-- Emoji Picker Modal -->
-    <div id="emojiPickerModal" class="emoji-picker-modal hidden">
-        <div class="emoji-picker-backdrop"></div>
-        <div class="emoji-picker-container">
-            <div class="emoji-picker-header">
-                <h3>Pick an Emoji</h3>
-                <button class="close-button" id="closeEmojiPicker">×</button>
-            </div>
-            <div class="emoji-picker-content">
-                <div class="emoji-categories">
-                    <button class="emoji-category active" data-category="smileys">😀</button>
-                    <button class="emoji-category" data-category="gestures">👍</button>
-                    <button class="emoji-category" data-category="animals">🐶</button>
-                    <button class="emoji-category" data-category="food">🍎</button>
-                    <button class="emoji-category" data-category="activities">⚽</button>
-                    <button class="emoji-category" data-category="objects">🔥</button>
-                    <button class="emoji-category" data-category="travel">🚗</button>
-                    <button class="emoji-category" data-category="weather">☀️</button>
-                </div>
-                <div class="emoji-grid" id="emojiGrid">
-                    <!-- Emojis will be populated by JavaScript -->
-                </div>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Mention Dropdown -->
     <div id="mentionDropdown" class="mention-dropdown hidden">
