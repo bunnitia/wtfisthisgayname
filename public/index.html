@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-container">
+            <h1>Join Chat</h1>
+            <div class="input-group">
+                <label for="username">Username (max 24 characters)</label>
+                <input type="text" id="username" maxlength="24" placeholder="Enter your username">
+            </div>
+            <div class="input-group">
+                <label for="colorPicker">Choose your color</label>
+                <input type="color" id="colorPicker" value="#ff6b6b">
+            </div>
+            <button id="joinButton" class="join-button">Join</button>
+        </div>
+    </div>
+
+    <!-- Pre-Join Screen -->
+    <div id="preJoinScreen" class="pre-join-screen hidden">
+        <div class="pre-join-container">
+            <div class="pre-join-header">
+                <h1>Chat Preview</h1>
+                <div class="username-display">Joining as <span id="preJoinUsername"></span></div>
+            </div>
+            
+            <div class="pre-join-content">
+                <div class="pre-join-left-panel">
+                    <div class="panel-tabs">
+                        <button class="panel-tab active" data-tab="summary">Chat Summary</button>
+                        <button class="panel-tab" data-tab="mentions">Mentions</button>
+                    </div>
+                    <div class="panel-content">
+                        <div class="tab-content active" id="summary-tab">
+                            <div class="chat-summary">
+                                <p class="summary-empty">No recent activity to summarize</p>
+                            </div>
+                        </div>
+                        <div class="tab-content" id="mentions-tab">
+                            <div class="mentions-list">
+                                <p class="mentions-empty">No mentions found</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="pre-join-right-panel">
+                    <div class="panel-header">
+                        <h3>Who's Online</h3>
+                    </div>
+                    <div class="panel-content">
+                        <div class="online-users-preview">
+                            <div class="loading-users">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pre-join-actions">
+                <button id="joinChatButton" class="join-chat-btn">Join</button>
+                <button id="readChatButton" class="read-chat-btn" disabled>Read Chat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Screen -->
+    <div id="chatScreen" class="chat-screen hidden">
+        <!-- Click Me Button -->
+        <div class="click-me-container">
+            <button id="clickMeButton" class="click-me-button">Changelog Aug ~20</button>
+        </div>
+        
+        <!-- User List -->
+        <div id="userList" class="user-list">
+            <span id="onlineCount">0 online:</span>
+            <div id="userContainer"></div>
+        </div>
+
+        <!-- Connection Status Indicator -->
+        <div id="connectionStatus" class="connection-status hidden">
+            <span class="status-text">Connecting...</span>
+        </div>
+
+        <!-- Chat History -->
+        <div id="chatHistory" class="chat-history"></div>
+
+        <!-- Chat Input -->
+        <div class="chat-input-container">
+            <!-- File Upload (hidden) -->
+            <input type="file" id="fileInput" multiple accept="image/*,video/*,audio/*,text/*,application/pdf,application/json" style="display: none;">
+            
+            <!-- Attachment Preview Area -->
+            <div id="attachmentPreview" class="attachment-preview hidden"></div>
+            
+            <!-- Upload Progress Bar -->
+            <div id="uploadProgress" class="upload-progress hidden">
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+                <span class="progress-text">Uploading...</span>
+            </div>
+            
+            <!-- Scroll to bottom button (shown when not at bottom) -->
+            <div id="scrollToBottom" class="scroll-to-bottom hidden" title="Scroll to bottom">⬇️</div>
+
+            <!-- Chat Input Row -->
+            <div class="chat-input-row">
+                <button id="attachButton" class="attach-button" title="Attach files or paste from clipboard">📎</button>
+                <textarea id="chatInput" rows="1" placeholder="msg thing" maxlength="5000"></textarea>
+                <div class="settings-icon" id="settingsIcon">⚙️</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="settings-modal hidden">
+        <div class="settings-backdrop"></div>
+        <div class="settings-container">
+            <div class="settings-header">
+                <h2>Settings</h2>
+                <button class="close-button" id="closeSettings">×</button>
+            </div>
+            <div class="settings-content">
+                <!-- Sidebar -->
+                <div class="settings-sidebar">
+                    <button class="sidebar-item active" data-category="account">Account</button>
+                    <button class="sidebar-item" data-category="appearance">Appearance</button>
+                    <button class="sidebar-item" data-category="notifications">Notifications</button>
+                    <button class="sidebar-item" data-category="safety">Safety</button>
+                </div>
+                
+                <!-- Content -->
+                <div class="settings-main">
+                    <!-- Account Section -->
+                    <div class="settings-section active" id="account-section">
+                        <h3>Account Settings</h3>
+                        <div class="setting-group">
+                            <label for="settingsUsername">Username</label>
+                            <input type="text" id="settingsUsername" maxlength="24" placeholder="Enter your username">
+                        </div>
+                        <div class="setting-group">
+                            <label for="settingsColor">Your Color</label>
+                            <input type="color" id="settingsColor" value="#ff6b6b">
+                        </div>
+                        <div class="setting-group">
+                            <label for="settingsWebsite">Website (Optional)</label>
+                            <input type="url" id="settingsWebsite" placeholder="https://example.com" maxlength="200">
+                            <div class="setting-description">
+                                When you set a website, other users can click on your username in chat messages to visit your link. This could be your portfolio, social media, or any website you want to share.
+                            </div>
+                        </div>
+                        <button id="updateAccountButton" class="update-button">Update & Save</button>
+                        <button id="logoutButton" class="logout-button">Logout</button>
+                    </div>
+                    
+                    <!-- Appearance Section -->
+                    <div class="settings-section" id="appearance-section">
+                        <h3>Appearance Settings</h3>
+                        <div class="setting-group">
+                            <label for="gradientColor1">Background Gradient Color 1</label>
+                            <input type="color" id="gradientColor1" value="#1a1a2e">
+                        </div>
+                        <div class="setting-group">
+                            <label for="gradientColor2">Background Gradient Color 2</label>
+                            <input type="color" id="gradientColor2" value="#0f3460">
+                        </div>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Auto-adjust text colors for readability</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="autoAdjustColors" checked>
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                            <div class="setting-description">
+                                Automatically adjusts message text colors to ensure they remain readable against the gradient background as you scroll.
+                            </div>
+                        </div>
+                        <button id="resetAppearance" class="reset-button">Reset to Default</button>
+                    </div>
+                    
+                    <!-- Notifications Section -->
+                    <div class="settings-section" id="notifications-section">
+                        <h3>Notification Settings</h3>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Ping Sound Effect</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="pingSound" checked>
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                            <div class="setting-description">
+                                When enabled, you will hear a distinctive chime sound when someone mentions you with "@username" in their message. This helps you notice when you're being addressed in the chat.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Safety Section -->
+                    <div class="settings-section" id="safety-section">
+                        <h3>Safety Settings</h3>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Censor Swear Words</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="censorSwears">
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div class="setting-group">
+                            <label class="toggle-label">
+                                <span>Spoiler Images by Default</span>
+                                <div class="toggle-container">
+                                    <input type="checkbox" id="spoilerImages">
+                                    <div class="toggle-slider"></div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Mention Dropdown -->
+    <div id="mentionDropdown" class="mention-dropdown hidden">
+        <div class="mention-list" id="mentionList">
+            <!-- Mention suggestions will be populated by JavaScript -->
+        </div>
+    </div>
+
+    <!-- Click Me Modal -->
+    <div id="clickMeModal" class="click-me-modal hidden">
+        <div class="click-me-backdrop"></div>
+        <div class="click-me-container-modal">
+            <div class="click-me-header">
+                <h2>YAY new update! (changelog pls)</h2>
+                <button class="close-button" id="closeClickMe">×</button>
+            </div>
+            
+            <!-- Tabs -->
+            <div class="click-me-tabs">
+                <button class="click-me-tab active" data-tab="about">ABOUT</button>
+                <button class="click-me-tab" data-tab="changelog">CHANGELOG</button>
+            </div>
+            
+            <div class="click-me-content">
+                <!-- About Tab Content -->
+                <div id="about-tab" class="click-me-tab-content active">
+                    <div class="click-me-section">
+                        <h3>sleep mode activated 😴</h3>
+                        <p>this thing goes to sleep after 15 mins cuz im too lazy to pay for a server plan lol. if people actually use this and it gets a lot of activity ill probably get a proper plan and maybe even a domain that doesnt look like garbage</p>
+                    </div>
+                    
+                    <div class="click-me-section">
+                        <h3>ugly domain alert 🚨</h3>
+                        <p>domain literally looks ugly cuz its free (no shit sherlock) and im using render to host it (again, no shit) cuz im too lazy to setup cloudflare and all that fancy stuff</p>
+                    </div>
+                    
+                    <div class="click-me-section">
+                        <h3>code is naked 👀</h3>
+                        <p>im too lazy to obfuscate the code so u can literally see the frontend and probably connect bots especially since this is raw websocket. like the source code is just sitting there saying "hey come exploit me"</p>
+                    </div>
+                    
+                    <div class="click-me-section">
+                        <h3>security? finally security 🔓 -> 🔒</h3>
+                        <p>BEFORE: u can literally duplicate ur tab and itll think ur another user with the same name. thats how shit the security on this website is. like i didnt even try to prevent that lmao</p>
+                        <p>NOW: u can no longer connect if someone online has the same name as you</p>
+                    </div>
+                    
+                    <div class="click-me-footer">
+                        <p>anyway enjoy the chat i guess 🤷‍♂️</p>
+                    </div>
+                </div>
+                
+                <!-- Changelog Tab Content -->
+                <div id="changelog-tab" class="click-me-tab-content">
+                    <div class="changelog-categories">
+                        <button class="changelog-category-btn" data-category="june22">June 22</button>
+                        <button class="changelog-category-btn" data-category="july2">~July 2</button>
+                        <button class="changelog-category-btn active" data-category="aug20">~Aug 20</button>
+                        <button class="changelog-category-btn" data-category="soon">Coming Soon</button>
+                    </div>
+                    
+                    <!-- June 22 Changelog -->
+                    <div id="june22-changelog" class="changelog-section">
+                        <h3>🎉 **june 22 - the day everything went live**</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **new features**</h4>
+                            <ul>
+                                <li>🚀 **released the server** - its alive motherfuckers</li>
+                                <li>📝 **markdown formatting support** for your chaotic messages:
+                                    <ul>
+                                        <li>`**bold text**` for when u need to **yell**</li>
+                                        <li>`*italic text*` for that *dramatic emphasis*</li>
+                                        <li>`\`inline code\`` for when u wanna look like a programmer</li>
+                                        <li>`-# tiny gray text` for whispers and side comments</li>
+                                        <li>`#`, `##`, `###` headings cuz structure matters sometimes</li>
+                                        <li>`||spoiler text||` for regular spoilers</li>
+                                        <li>`||||warning spoiler||||` for content that needs extra warning</li>
+                                        <li>`https://links.com/` get converted to clickable links (with warnings to prevent rickrolls)</li>
+                                    </ul>
+                                </li>
+                                <li>🔄 **replaced "Click Me!" with this beautiful modal** ur looking at rn</li>
+                                <li>📁 **added tabs and categories** cuz organization is kinda cool</li>
+                                <li>⌨️ **auto-focus chat input** - just start typing anywhere and it focuses automatically (no more clicking like a peasant)</li>
+                                <li>🧹 **a command to clear the chat** - `/clearchat` clears everything for everyone</li>
+                                <li>🙈 **setting "spoiler images by default" is automatically turned off** - no more accidental spoilers</li>
+                                <li>-- **auto scroll for media** - media will automatically scroll for u if u have auto scroll on (lke in chat.owo69)</li>
+                                <li>-- **files are now IDs** - spamming files is easier now</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🔧 **bug fixes**</h4>
+                            <ul>
+                                <li>💬 **fixed first DM message** - no more messages getting cut off at the top</li>
+                                <li>🌐 **fixed spacing with website links** - there might be an extra space but who's counting</li>
+                                <li>📎 **fixed media/files in DMs** - attachments actually show up now like they should</li>
+                                <li>🎯 **fixed spoiler reveal** - warning spoilers actually show the original content instead of staying as "Click to reveal spoiler (Warning)" forever</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- July 2 Changelog -->
+                    <div id="july2-changelog" class="changelog-section">
+                        <h3>✨ **~july 2 - the glow up update**</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **features**</h4>
+                            <ul>
+                                <li>🖱️ **cursors are way smoother now** (well for some users) with:
+                                    <ul>
+                                        <li>**ease out animation for laggy people**</li>
+                                        <li>**more accurate cursor locations for everyone**</li>
+                                        <li>**smoother movement**</li>
+                                    </ul>
+                                </li>
+                                <li>💬 **DM modals are bigger** - no more squinting at tiny chat windows</li>
+                                <li>🚫 **added block button that does literally nothing** - its there for moral support</li>
+                                <li>🌐 **added ip based moderation (and auto-mod)** - troublemakers beware</li>
+                                <li>🔄 **added auto-reconnection (for sigma 😎)** - no more manual refreshing when connection dies</li>
+                                <li>📎 **rewritten attachment logic** - hopefully less buggy now</li>
+                                <li>📱 **attachments dont have 1 max column anymore** - spread those files out</li>
+                                <li>👻 **dim users in online list when they're tabbed out** - see who's actually paying attention</li>
+                                <li>📜 **increased chat history limit** (but you only see last 128 messages when reconnecting so u cant backread)</li>
+                                <li>✏️ **increased chat box character limit to something** (i forgot what exactly lol)</li>
+                                <li>🎯 **many more but i forgot** - there's probably other stuff too</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🔧 **bug fixes**</h4>
+                            <ul>
+                                <li>🙈 **fixed media spoiler** - now only hides content, not entire msg</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <!-- Aug 20 Changelog -->
+                    <div id="aug20-changelog" class="changelog-section active">
+                        <h3>✨ **~aug 20 - speed + cleanup**</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **features**</h4>
+                            <ul>
+                                <li>⚡ **faster, more reliable uploads**
+                                    <ul>
+                                        <li>uploads are quicker so ur not waiting forever</li>
+                                        <li>less likely to fail randomly</li>
+                                    </ul>
+                                </li>
+                                <li>🗂️ **file ids are gone**
+                                    <ul>
+                                        <li>to send a file quick, just type its name with the extension (example: <code>boo.jpg</code>)</li>
+                                        <li>u can see all uploads at <code>https://chatting-app-e0xz.onrender.com/uploads</code></li>
+                                    </ul>
+                                </li>
+                                <li>📜 **chat history** now shows messages from the last week instead of a flat 512 cap</li>
+                                <li>🧠 **connect flow is smarter**
+                                    <ul>
+                                        <li>names must be unique — if someone already has ur name u gotta change it to join</li>
+                                        <li>`Coming Soon` when connecting, u land on a pre-join screen with a chat summary, mentions about u (if any), and who's online</li>
+                                        <li>`Coming Soon` u can read the whole chat and change ur profile before fully joining (people can see that u connected)</li>
+                                        <li>`Coming Soon` <em>connected</em> = on the summary screen • <em>joined</em> = fully in the chat</li>
+                                    </ul>
+                                </li>
+                                <li>🧭 **auto-scroll acts like a toggle now**
+                                    <ul>
+                                        <li>scroll down = auto-scroll on</li>
+                                        <li>scroll up = auto-scroll off</li>
+                                        <li>there’s a “Scroll to bottom” button when ur not at the bottom</li>
+                                    </ul>
+                                </li>
+                                <li>😀 **emoji button removed** (it wasn’t doing much)</li>
+                                <li>`Coming Soon` 🖱️ **custom right-click menu**</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🔧 **bug fixes**</h4>
+                            <ul>
+                                <li>🧷 uploads randomly failing</li>
+                                <li>🗑️ media not deleting when its message got deleted</li>
+                                <li>✏️ replies showing the original text after a message was edited</li>
+                                <li>♻️ deleted/edited labels disappearing after reconnect</li>
+                                <li>🔒 u could edit/delete someone else’s msgs if u had the same name (fixed by forcing unique names)</li>
+                                <li>▮ redesigned <code>||spoilers||</code> and <code>||||warning spoilers||||</code></li>
+                                <li>🤖 auto-mod actually works again</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <!-- Coming Soon Changelog -->
+                    <div id="soon-changelog" class="changelog-section">
+                        <h3>🔮 **coming soon™** *(no eta cuz im lazy)*</h3>
+                        
+                        <div class="changelog-group">
+                            <h4>✨ **visual improvements**</h4>
+                            <ul>
+                                <li>🎨 **redesign the whole website** - make it look actually nice</li>
+                                <li>💌 **better DMs** - current system is kinda ass ngl</li>
+                                <li>🎯 **fix external link warning** - its not even centered and it bothers me</li>
+                                <li>😴 **AFK detection** - mark users as away when they're not active</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>⚡ **performance & fixes**</h4>
+                            <ul>
+                                <li>🛠️ **rewrite the entire messaging system**</li>
+                                <li>🙈 **manual spoiler + warning spoiler for files** (instead of only for text)</li>
+                                <li>🕒 **maybe show active times for users** (toggle in settings)</li>
+                                <li>📺 **yt embeds (ez)** - youtube links should show previews</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🎮 **mini games**</h4>
+                            <ul>
+                                <li>⚡ **type race** - see who can type fastest without dying</li>
+                                <li>🔢 **math race** - quick maths but make it competitive</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🛡️ **moderation & admin tools**</h4>
+                            <ul>
+                                <li>🚫 **block people** - for when someone's being extra annoying</li>
+                                <li>🔇 **fix mute system** - currently u can just relog to bypass it lmao</li>
+                                <li>⚡ **stricter anti-spam** - current system is too lenient</li>
+                                <li>🗑️ **mod message deletion** - let mods clean up the chaos</li>
+                                <li>😈 **un-degenerate sigma** - whatever tf that means</li>
+                                <li>🤖 **||||sexbot||||???** - dont ask me what this means either</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-group">
+                            <h4>🧭 **roadmap-ish**</h4>
+                            <ul>
+                                <li>🧩 **possible full website recode**
+                                    <ul>
+                                        <li>friend requests + a more DM-like interface with more DM features</li>
+                                        <li>global chat stays</li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <div class="changelog-footer">
+                            <p>*timeline: whenever i feel like it 🤷‍♂️*</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="components/UserActionDropdown.js"></script>
+    <script src="app.js"></script>
+</body>
+</html> 
