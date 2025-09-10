@@ -70,8 +70,8 @@ function escapeHtml(text) {
 const app = express();
 
 // Add body parsing middleware
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ extended: true, limit: '500mb' }));
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -157,7 +157,7 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB limit
+        fileSize: 500 * 1024 * 1024, // 500MB limit
         files: 10 // Maximum 10 files
     },
     fileFilter: (req, file, cb) => {
@@ -208,10 +208,10 @@ app.post('/upload', (req, res) => {
             
             // Handle specific multer errors
             if (err.code === 'LIMIT_FILE_SIZE') {
-                return res.status(413).json({ 
-                    error: 'File too large', 
-                    message: 'File size exceeds 50MB limit',
-                    details: err.message 
+                return res.status(413).json({
+                    error: 'File too large',
+                    message: 'File size exceeds 500MB limit',
+                    details: err.message
                 });
             } else if (err.code === 'LIMIT_FILE_COUNT') {
                 return res.status(413).json({ 

@@ -3742,7 +3742,7 @@
                         } catch {
                             // If response isn't JSON, use generic error
                             if (xhr.status === 413) {
-                                reject(new Error('File too large (exceeds 50MB limit)'));
+                                reject(new Error('File too large (exceeds 500MB limit)'));
                             } else {
                                 reject(new Error(`Upload failed: ${xhr.status}`));
                             }
@@ -3753,7 +3753,7 @@
                 xhr.addEventListener('error', () => reject(new Error('Upload failed')));
                 xhr.addEventListener('timeout', () => reject(new Error('Upload timeout')));
                 
-                xhr.timeout = 120000; // 2 minutes for large files
+                xhr.timeout = 300000; // 5 minutes for very large files
                 xhr.open('POST', '/upload');
                 xhr.send(formData);
             });
@@ -6367,7 +6367,7 @@
                         } catch {
                             // If response isn't JSON, use generic error
                             if (xhr.status === 413) {
-                                reject(new Error('File too large (exceeds 50MB limit)'));
+                                reject(new Error('File too large (exceeds 500MB limit)'));
                             } else {
                                 reject(new Error(`Upload failed: ${xhr.status}`));
                             }
@@ -6395,7 +6395,7 @@
                     reject(new Error('Upload timeout'));
                 });
                 
-                xhr.timeout = 120000; // 2 minutes for large files // 30 second timeout
+                xhr.timeout = 300000; // 5 minutes for very large files // 30 second timeout
                 xhr.open('POST', '/upload');
                 xhr.send(formData);
             });
