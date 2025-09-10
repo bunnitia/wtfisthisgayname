@@ -3731,18 +3731,29 @@
                         try {
                             const response = JSON.parse(xhr.responseText);
                             resolve(response.files[0]); // get first file from response
-        } catch (error) {
+                        } catch (error) {
                             reject(new Error('Invalid server response'));
                         }
                     } else {
-                        reject(new Error(`Upload failed: ${xhr.status}`));
+                        try {
+                            const errorResponse = JSON.parse(xhr.responseText);
+                            const errorMessage = errorResponse.message || errorResponse.error || `Upload failed: ${xhr.status}`;
+                            reject(new Error(errorMessage));
+                        } catch {
+                            // If response isn't JSON, use generic error
+                            if (xhr.status === 413) {
+                                reject(new Error('File too large (exceeds 50MB limit)'));
+                            } else {
+                                reject(new Error(`Upload failed: ${xhr.status}`));
+                            }
+                        }
                     }
                 });
                 
                 xhr.addEventListener('error', () => reject(new Error('Upload failed')));
                 xhr.addEventListener('timeout', () => reject(new Error('Upload timeout')));
                 
-                xhr.timeout = 30000;
+                xhr.timeout = 120000; // 2 minutes for large files
                 xhr.open('POST', '/upload');
                 xhr.send(formData);
             });
@@ -6349,7 +6360,18 @@
                         if (dmUploadProgress) {
                             dmUploadProgress.classList.add('hidden');
                         }
-                        reject(new Error(`Upload failed: ${xhr.status}`));
+                        try {
+                            const errorResponse = JSON.parse(xhr.responseText);
+                            const errorMessage = errorResponse.message || errorResponse.error || `Upload failed: ${xhr.status}`;
+                            reject(new Error(errorMessage));
+                        } catch {
+                            // If response isn't JSON, use generic error
+                            if (xhr.status === 413) {
+                                reject(new Error('File too large (exceeds 50MB limit)'));
+                            } else {
+                                reject(new Error(`Upload failed: ${xhr.status}`));
+                            }
+                        }
                     }
                 });
                 
@@ -6373,7 +6395,7 @@
                     reject(new Error('Upload timeout'));
                 });
                 
-                xhr.timeout = 30000; // 30 second timeout
+                xhr.timeout = 120000; // 2 minutes for large files // 30 second timeout
                 xhr.open('POST', '/upload');
                 xhr.send(formData);
             });

@@ -68,6 +68,11 @@ function escapeHtml(text) {
 }
 
 const app = express();
+
+// Add body parsing middleware
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
@@ -195,25 +200,60 @@ app.use((req, res, next) => {
 });
 
 // File upload endpoint (MUST be before catch-all route)
-app.post('/upload', upload.array('files', 10), (req, res) => {
-    try {
-        if (!req.files || req.files.length === 0) {
-            return res.status(400).json({ error: 'No files uploaded' });
+app.post('/upload', (req, res) => {
+    // Use multer middleware with error handling
+    upload.array('files', 10)(req, res, (err) => {
+        if (err) {
+            console.error('Multer upload error:', err);
+            
+            // Handle specific multer errors
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({ 
+                    error: 'File too large', 
+                    message: 'File size exceeds 50MB limit',
+                    details: err.message 
+                });
+            } else if (err.code === 'LIMIT_FILE_COUNT') {
+                return res.status(413).json({ 
+                    error: 'Too many files', 
+                    message: 'Maximum 10 files allowed',
+                    details: err.message 
+                });
+            } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+                return res.status(400).json({ 
+                    error: 'Unexpected file field', 
+                    message: 'Invalid file upload field',
+                    details: err.message 
+                });
+            } else {
+                return res.status(500).json({ 
+                    error: 'Upload failed', 
+                    message: 'Server error during file upload',
+                    details: err.message 
+                });
+            }
         }
 
-        const uploadedFiles = req.files.map(file => ({
-            originalName: file.originalname,
-            filename: file.filename, // saved name (original or suffixed)
-            size: file.size,
-            type: file.mimetype,
-            url: `/uploads/${encodeURIComponent(file.filename)}`
-        }));
+        try {
+            if (!req.files || req.files.length === 0) {
+                return res.status(400).json({ error: 'No files uploaded' });
+            }
 
-        res.json({ files: uploadedFiles });
-    } catch (error) {
-        console.error('Upload error:', error);
-        res.status(500).json({ error: 'Upload failed' });
-    }
+            const uploadedFiles = req.files.map(file => ({
+                originalName: file.originalname,
+                filename: file.filename, // saved name (original or suffixed)
+                size: file.size,
+                type: file.mimetype,
+                url: `/uploads/${encodeURIComponent(file.filename)}`
+            }));
+
+            console.log(`✅ Successfully uploaded ${uploadedFiles.length} file(s)`);
+            res.json({ files: uploadedFiles });
+        } catch (error) {
+            console.error('Upload processing error:', error);
+            res.status(500).json({ error: 'Upload failed', details: error.message });
+        }
+    });
 });
 
 // Check if a file with given name exists
