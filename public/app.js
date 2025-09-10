@@ -4022,8 +4022,15 @@
             // Create video player
             return this.createVideoAttachment(attachment);
         } else if (attachment.type.startsWith('audio/')) {
-            // Create audio player
-            return this.createAudioAttachment(attachment);
+            // Check if it's a MIDI file
+            if (attachment.type === 'audio/midi' || 
+                attachment.originalName.toLowerCase().endsWith('.mid') || 
+                attachment.originalName.toLowerCase().endsWith('.midi')) {
+                return this.createMidiAttachment(attachment);
+            } else {
+                // Create regular audio player
+                return this.createAudioAttachment(attachment);
+            }
         } else {
             // Create file attachment (including unrecognized)
             return this.createFileAttachment(attachment);
@@ -4260,6 +4267,81 @@
         audioContainer.appendChild(audioInfo);
         audioContainer.appendChild(audioPlayer);
         return audioContainer;
+    }
+
+    createMidiAttachment(attachment) {
+        // Import MidiPlayer dynamically to avoid loading it unless needed
+        import('./components/MidiPlayer.js').then(module => {
+            const MidiPlayer = module.default;
+            
+            // Create container for MIDI player
+            const midiContainer = document.createElement('div');
+            midiContainer.className = 'message-midi-attachment';
+            
+            // Create MIDI player instance
+            const midiPlayer = new MidiPlayer(attachment.url, {
+                name: attachment.originalName,
+                size: attachment.size
+            });
+            
+            // Add player to container
+            midiContainer.appendChild(midiPlayer.getElement());
+            
+            // Store reference for cleanup if needed
+            if (!this.activeMidiPlayers) {
+                this.activeMidiPlayers = new Set();
+            }
+            this.activeMidiPlayers.add(midiPlayer);
+            
+        }).catch(error => {
+            console.error('Failed to load MIDI player:', error);
+            // Fallback to regular file attachment
+            return this.createFileAttachment(attachment);
+        });
+        
+        // Return a temporary container that will be populated
+        const tempContainer = document.createElement('div');
+        tempContainer.className = 'message-midi-attachment loading';
+        tempContainer.innerHTML = `
+            <div class="midi-loading">
+                <span class="loading-spinner">🎵</span>
+                <span>Loading MIDI player...</span>
+            </div>
+        `;
+        
+        // Load the MIDI player
+        import('./components/MidiPlayer.js').then(module => {
+            const MidiPlayer = module.default;
+            
+            // Create MIDI player instance
+            const midiPlayer = new MidiPlayer(attachment.url, {
+                name: attachment.originalName,
+                size: attachment.size
+            });
+            
+            // Replace loading content with player
+            tempContainer.className = 'message-midi-attachment';
+            tempContainer.innerHTML = '';
+            tempContainer.appendChild(midiPlayer.getElement());
+            
+            // Store reference for cleanup if needed
+            if (!this.activeMidiPlayers) {
+                this.activeMidiPlayers = new Set();
+            }
+            this.activeMidiPlayers.add(midiPlayer);
+            
+        }).catch(error => {
+            console.error('Failed to load MIDI player:', error);
+            // Show error message
+            tempContainer.innerHTML = `
+                <div class="midi-error">
+                    <span>❌ Failed to load MIDI player</span>
+                    <button onclick="window.open('${attachment.url}', '_blank')" class="download-btn">Download MIDI</button>
+                </div>
+            `;
+        });
+        
+        return tempContainer;
     }
 
     createFileAttachment(attachment) {

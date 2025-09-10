@@ -120,6 +120,9 @@ function guessMime(input) {
             return 'audio/wav';
         case '.ogg':
             return 'audio/ogg';
+        case '.mid':
+        case '.midi':
+            return 'audio/midi';
         case '.pdf':
             return 'application/pdf';
         case '.txt':
